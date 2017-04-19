@@ -23,8 +23,8 @@ def get_land(artist):
 
 
 def get_rel_url(artist, urltype):
-    if "url-relation-list" in artist:
-        for url in artist["url-relation-list"]:
+    if "url-relation-list" in artist["artist"]:
+        for url in artist["artist"]["url-relation-list"]:
             if url["type"] == urltype:
                 return url["target"]
 

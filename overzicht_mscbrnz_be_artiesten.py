@@ -1,3 +1,2 @@
 from shared_code import get_musicbrainz_belgian_artist_ids
-
 be_artists = get_musicbrainz_belgian_artist_ids(update=True)

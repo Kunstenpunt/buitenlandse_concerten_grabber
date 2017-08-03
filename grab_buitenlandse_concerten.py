@@ -13,6 +13,7 @@ import facebook
 from dateparser import parse as dateparse
 import psycopg2
 from configparser import ConfigParser
+from pycountry import countries
 
 
 class PlatformLeecher(object):
@@ -27,7 +28,7 @@ class PlatformLeecher(object):
     def set_platform_identifiers(self):
         lst = read_excel("resources/belgian_mscbrnz_artists.xlsx")
         bands_done = set()
-        for i in lst.index:
+        for i in lst.index[0:10]:
             if lst.ix[i][self.platform] is not None and lst.ix[i][self.platform] != "None" and lst.ix[i]["band"] not in bands_done:
                 self.platform_identifiers.append((lst.ix[i][["band", "mbid", self.platform]]))
             else:
@@ -472,8 +473,44 @@ df = df.append(dkbc.concerts, ignore_index=True)
 for column in ["titel", "artiest", "venue", "artiest", "stad", "land"]:
     df[column] = df[column].map(lambda x: ''.join([str(c) for c in str(x) if ord(str(c)) > 31 or ord(str(c)) == 9]))
 
+# resolve full country names to iso code
+clean_countries = []
+country_cleaning = read_excel("resources/country_cleaning.xlsx")
+country_cleaning_additions = set()
+for land in df["land"]:
+    land = land.strip()
+    if len(land) == 2:
+        clean_countries.append(land)
+    else:
+        try:
+            clean_country = countries.get(name=land).alpha_2
+        except KeyError:
+            if land in country_cleaning["original"].values:
+                clean_country = country_cleaning[country_cleaning["original"] == land]["clean"].iloc[0]
+            else:
+                country_cleaning_additions.add({"original": land, "clean": None})
+                clean_country = None
+        clean_countries.append(clean_country)
+country_cleaning.append(DataFrame(list(country_cleaning_additions)), ignore_index=True).to_excel("resources/country_cleaning.xlsx")
+df["land_clean"] = clean_countries
+
+# resolve dirty city names to clean city names
+city_cleaning_additions = set()
+clean_cities = []
+city_cleaning = read_excel("resources/city_cleaning.xlsx")
+for stad in df["stad"]:
+    if stad in city_cleaning["original"].values:
+        clean_city = city_cleaning[city_cleaning["original"] == stad]["clean"].iloc[0]
+        print(clean_city)
+    else:
+        city_cleaning_additions.add({"original": stad, "clean": None})
+        clean_city = None
+    clean_cities.append(clean_city)
+city_cleaning.append(DataFrame(list(city_cleaning_additions)), ignore_index=True).to_excel("resources/city_cleaning.xlsx")
+df["stad_clean"] = clean_cities
+
 # mark duplicates
-df["duplicaat?"] = df.duplicated(subset=["artiest_mb_naam", "datum", "stad", ])
+df["duplicaat?"] = df.duplicated(subset=["artiest_mb_naam", "datum", "stad_clean", ])
 
 # create a diff for events
 previous = read_excel("output/latest.xlsx")

@@ -51,13 +51,13 @@ class SongkickLeecher(PlatformLeecher):
         with open("resources/songkick_api_key.txt") as f:
             self.platform_access_granter = f.read()
         self.platform = "songkick"
+        self.past_events_url = "http://api.songkick.com/api/3.0/artists/{0}/gigography.json?apikey={1}&page={2}"
+        self.future_events_url = "http://api.songkick.com/api/3.0/artists/{0}/calendar.json?apikey={1}&page={2}"
 
     def set_events_for_identifier(self, band, mbid, url):
         artist_id, artist_name = url.split("/")[-1].split("-")[0], " ".join(url.split("/")[-1].split("-")[1:])
-        past_events_url = "http://api.songkick.com/api/3.0/artists/{0}/gigography.json?apikey={1}&page={2}"
-        future_events_url = "http://api.songkick.com/api/3.0/artists/{0}/calendar.json?apikey={1}&page={2}"
-        self.get_events(past_events_url, artist_id, artist_name, band, mbid)
-        self.get_events(future_events_url, artist_id, artist_name, band, mbid)
+        self.get_events(self.past_events_url, artist_id, artist_name, band, mbid)
+        self.get_events(self.future_events_url, artist_id, artist_name, band, mbid)
 
     def get_events(self, base_url, artistid, artistname, band, mbid):
         page = 1

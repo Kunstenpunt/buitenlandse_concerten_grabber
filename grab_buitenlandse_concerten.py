@@ -296,10 +296,9 @@ class MusicBrainzArtistsBelgium(object):
             new_new_parts = []
             for new_part in new_parts:
                 print("nieuwe locatie", new_part[1])
-                if new_part[1] != "Wallonie":
-                    parts = self.__get_parts_of(new_part[0])
-                    new_new_parts.extend(parts)
-                    area_ids.extend(parts)
+                parts = self.__get_parts_of(new_part[0])
+                new_new_parts.extend(parts)
+                area_ids.extend(parts)
             new_parts = new_new_parts
         belgium = []
         for area_id in area_ids:

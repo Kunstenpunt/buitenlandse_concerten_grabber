@@ -99,19 +99,17 @@ class BandsInTownLeecher(PlatformLeecher):
         self.platform = "bandsintown"
 
     def set_events_for_identifier(self, band, mbid, url):
-        events = []
         period = "1900-01-01,2050-01-01"
 
-        if "bandsintown.com" in str(url):
-            bandnaam = urlparse.unquote(url.split("/")[-1].split("?came_from")[0])
-            events = self.bitc.events(bandnaam, date=period)
-            while "errors" in events:
-                if "Rate limit exceeded" in events["errors"]:
-                    print("one moment!")
-                    sleep(60.0)
-                    events = self.bitc.events(bandnaam, date=period)
-                else:
-                    events = []
+        bandnaam = urlparse.unquote(url.split("/")[-1].split("?came_from")[0])
+        events = self.bitc.events(bandnaam, date=period)
+        while "errors" in events:
+            if "Rate limit exceeded" in events["errors"]:
+                print("one moment!")
+                sleep(60.0)
+                events = self.bitc.events(bandnaam, date=period)
+            else:
+                events = []
 
         for concert in events:
             self.events.append(self.map_platform_to_schema(concert, band, mbid, {}))

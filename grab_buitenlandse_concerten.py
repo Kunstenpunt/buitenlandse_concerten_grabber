@@ -468,13 +468,9 @@ dkbc = DataKunstenBeConnector()
 dkbc.get_concerts_abroad()
 df = df.append(dkbc.concerts, ignore_index=True)
 
-# fix weird symbols
-df["titel"] = df["titel"].map(lambda x: ''.join([str(c) for c in str(x) if ord(str(c)) > 31 or ord(str(c)) == 9]))
-df["artiest"] = df["artiest"].map(lambda x: ''.join([str(c) for c in str(x) if ord(str(c)) > 31 or ord(str(c)) == 9]))
-df["venue"] = df["venue"].map(lambda x: ''.join([str(c) for c in str(x) if ord(str(c)) > 31 or ord(str(c)) == 9]))
-df["artiest"] = df["artiest"].map(lambda x: ''.join([str(c) for c in str(x) if ord(str(c)) > 31 or ord(str(c)) == 9]))
-df["stad"] = df["stad"].map(lambda x: ''.join([str(c) for c in str(x) if ord(str(c)) > 31 or ord(str(c)) == 9]))
-df["land"] = df["land"].map(lambda x: ''.join([str(c) for c in str(x) if ord(str(c)) > 31 or ord(str(c)) == 9]))
+# fix weird symbols in columns
+for column in ["titel", "artiest", "venue", "artiest", "stad", "land"]:
+    df[column] = df[column].map(lambda x: ''.join([str(c) for c in str(x) if ord(str(c)) > 31 or ord(str(c)) == 9]))
 
 # mark duplicates
 df["duplicaat?"] = df.duplicated(subset=["artiest_mb_naam", "datum", "stad", ])

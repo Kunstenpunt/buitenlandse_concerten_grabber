@@ -76,7 +76,7 @@ class SongkickLeecher(PlatformLeecher):
     def map_platform_to_schema(self, event, band, mbid, other):
         return {
             "titel": event["displayName"].strip(),
-            "datum": datetime.strptime(event["start"]["date"], "%Y-%m-%d"),
+            "datum": dateparse(event["start"]["date"]).date(),
             "artiest": other["artist_name"],
             "artiest_id": "songkick_" + str(other["artist_id"]),
             "artiest_mb_naam": band,
@@ -118,7 +118,7 @@ class BandsInTownLeecher(PlatformLeecher):
 
     def map_platform_to_schema(self, concert, band, mbid, other):
         return {
-            "datum": (datetime.strptime(concert["datetime"], "%Y-%m-%dT%H:%M:%S")).date(),
+            "datum": dateparse(concert["datetime"]).date(),
             "land": (concert["venue"]["country"]).strip(),
             "stad": (concert["venue"]["city"]).strip(),
             "venue": (concert["venue"]["place"]).strip(),

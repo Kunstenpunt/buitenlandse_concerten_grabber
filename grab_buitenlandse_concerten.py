@@ -28,7 +28,7 @@ class PlatformLeecher(object):
     def set_platform_identifiers(self):
         lst = read_excel("resources/belgian_mscbrnz_artists.xlsx")
         bands_done = set()
-        for i in lst.index[0:10]:
+        for i in lst.index:
             if lst.ix[i][self.platform] is not None and lst.ix[i][self.platform] != "None" and lst.ix[i]["band"] not in bands_done:
                 self.platform_identifiers.append((lst.ix[i][["band", "mbid", self.platform]]))
             else:
@@ -77,7 +77,7 @@ class SongkickLeecher(PlatformLeecher):
     def map_platform_to_schema(self, event, band, mbid, other):
         return {
             "titel": event["displayName"].strip(),
-            "datum": dateparse(event["start"]["date"]).date(),
+            "datum": dateparse(event["start"]["date"]),
             "artiest": other["artist_name"],
             "artiest_id": "songkick_" + str(other["artist_id"]),
             "artiest_mb_naam": band,
@@ -117,7 +117,7 @@ class BandsInTownLeecher(PlatformLeecher):
 
     def map_platform_to_schema(self, concert, band, mbid, other):
         return {
-            "datum": dateparse(concert["datetime"]).date(),
+            "datum": dateparse(concert["datetime"]),
             "land": (concert["venue"]["country"]).strip(),
             "stad": (concert["venue"]["city"]).strip(),
             "venue": (concert["venue"]["place"]).strip(),
@@ -266,6 +266,7 @@ class MusicBrainzArtistsBelgium(object):
         areas = None
         while areas is None:
             try:
+                sleep(1.0)
                 areas = get_area_by_id(area_id, includes="area-rels")["area"]["area-relation-list"]
             except musicbrainz.NetworkError:
                 sleep(25.0)
@@ -312,6 +313,7 @@ class MusicBrainzArtistsBelgium(object):
                         artist = None
                         while artist is None:
                             try:
+                                sleep(1.0)
                                 artist = get_artist_by_id(hit["id"], includes=["url-rels"])
                             except musicbrainz.NetworkError:
                                 sleep(25.0)
@@ -319,6 +321,7 @@ class MusicBrainzArtistsBelgium(object):
                         bandsintown_url = self.__get_rel_url(artist, "bandsintown")
                         setlistfm_url = self.__get_rel_url(artist, "setlistfm")
                         facebook_url = self.__get_rel_url(artist, "social network", "facebook.com")
+                        print(hit["name"])
                         lijn = {
                             "band": hit["name"],
                             "mbid": hit["id"],
@@ -488,10 +491,10 @@ for land in df["land"]:
             if land in country_cleaning["original"].values:
                 clean_country = country_cleaning[country_cleaning["original"] == land]["clean"].iloc[0]
             else:
-                country_cleaning_additions.add({"original": land, "clean": None})
+                country_cleaning_additions.add(land)
                 clean_country = None
         clean_countries.append(clean_country)
-country_cleaning.append(DataFrame(list(country_cleaning_additions)), ignore_index=True).to_excel("resources/country_cleaning.xlsx")
+country_cleaning.append(DataFrame([{"original": land, "clean": None} for land in country_cleaning_additions]), ignore_index=True).to_excel("resources/country_cleaning.xlsx")
 df["land_clean"] = clean_countries
 
 # resolve dirty city names to clean city names
@@ -501,12 +504,11 @@ city_cleaning = read_excel("resources/city_cleaning.xlsx")
 for stad in df["stad"]:
     if stad in city_cleaning["original"].values:
         clean_city = city_cleaning[city_cleaning["original"] == stad]["clean"].iloc[0]
-        print(clean_city)
     else:
-        city_cleaning_additions.add({"original": stad, "clean": None})
+        city_cleaning_additions.add(stad)
         clean_city = None
     clean_cities.append(clean_city)
-city_cleaning.append(DataFrame(list(city_cleaning_additions)), ignore_index=True).to_excel("resources/city_cleaning.xlsx")
+city_cleaning.append(DataFrame([{"original": stad, "clean": None} for stad in city_cleaning_additions]), ignore_index=True).to_excel("resources/city_cleaning.xlsx")
 df["stad_clean"] = clean_cities
 
 # mark duplicates

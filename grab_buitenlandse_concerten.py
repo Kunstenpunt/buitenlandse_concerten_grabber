@@ -1,10 +1,10 @@
-from pandas import read_excel, DataFrame
+from pandas import read_excel, DataFrame, to_datetime
 from re import sub
 from musicbrainzngs import set_useragent, search_artists, get_area_by_id, musicbrainz, get_artist_by_id
 from codecs import open
 from time import sleep
 from json import loads
-from requests import get
+from requests import get, exceptions
 from math import ceil
 from datetime import datetime
 import bandsintown
@@ -77,7 +77,7 @@ class SongkickLeecher(PlatformLeecher):
     def map_platform_to_schema(self, event, band, mbid, other):
         return {
             "titel": event["displayName"].strip(),
-            "datum": dateparse(event["start"]["date"]),
+            "datum": dateparse(event["start"]["date"]).date(),
             "artiest": other["artist_name"],
             "artiest_id": "songkick_" + str(other["artist_id"]),
             "artiest_mb_naam": band,
@@ -117,7 +117,7 @@ class BandsInTownLeecher(PlatformLeecher):
 
     def map_platform_to_schema(self, concert, band, mbid, other):
         return {
-            "datum": dateparse(concert["datetime"]),
+            "datum": dateparse(concert["datetime"]).date(),
             "land": (concert["venue"]["country"]).strip(),
             "stad": (concert["venue"]["city"]).strip(),
             "venue": (concert["venue"]["place"]).strip(),
@@ -158,11 +158,13 @@ class FacebookEventLeecher(PlatformLeecher):
                     self.events.append(self.map_platform_to_schema(concert, band, mbid, {"page_label": page_label}))
         except facebook.GraphAPIError as e:
             pass
+        except exceptions.ConnectionError as e:
+            self.set_events_for_identifier(band, mbid, url)
 
     def map_platform_to_schema(self, concert, band, mbid, other):
         return {
             "titel": concert["name"] if "name" in concert else None,
-            "datum": dateparse(concert["start_time"]),
+            "datum": dateparse(concert["start_time"]).date(),
             "artiest": band,
             "artiest_id": "facebook_" + other["page_label"],
             "artiest_mb_naam": band,
@@ -204,7 +206,7 @@ class SetlistFmLeecher(PlatformLeecher):
     def map_platform_to_schema(self, concert, band, mbid, other):
         return {
             "titel": concert["info"] if "info" in concert else None,
-            "datum": dateparse(concert["eventDate"]),
+            "datum": dateparse(concert["eventDate"], ["%d-%m-%Y"]).date(),
             "artiest": concert["artist"]["name"],
             "artiest_id": "setlist_" + concert["artist"]["url"],
             "artiest_mb_naam": band,
@@ -280,13 +282,23 @@ class MusicBrainzArtistsBelgium(object):
         artists = {"artist-list": [], "artist-count": -1}
         while artists["artist-count"] < 0:
             try:
+                sleep(1.0)
                 artists_area = search_artists(area=area, limit=limit, offset=offset)
+                sleep(1.0)
                 artists_beginarea = search_artists(beginarea=area, limit=limit, offset=offset)
                 artists['artist-list'] = artists_area["artist-list"] + artists_beginarea["artist-list"]
                 artists['artist-count'] = artists_area["artist-count"] + artists_beginarea["artist-count"]
             except musicbrainz.NetworkError:
                 sleep(25.0)
         return artists
+
+    def __number_of_concerts(self, mbid):
+        concerts = read_excel("../output/latest.xlsx")
+        aantal_concerten_per_mbid = concerts.groupby(["artiest_mb_id"])["event_id"].count()
+        try:
+            return aantal_concerten_per_mbid.loc[mbid]
+        except KeyError:
+            return 0
 
     def update_list(self):
         area_ids = [("5b8a5ee5-0bb3-34cf-9a75-c27c44e341fc", "Belgium")]
@@ -302,6 +314,7 @@ class MusicBrainzArtistsBelgium(object):
             new_parts = new_new_parts
         belgium = []
         for area_id in area_ids:
+            print("finding artists in", area_id)
             offset = 0
             limit = 100
             area_hits = []
@@ -309,7 +322,7 @@ class MusicBrainzArtistsBelgium(object):
             while offset < total_search_results:
                 search_results = self.__search_artists_in_area(area_id[1], limit, offset)
                 for hit in list(search_results["artist-list"]):
-                    if "area" in hit and hit["area"]["id"] == area_id[0]:
+                    if ("area" in hit and hit["area"]["id"] == area_id[0]) or ("begin-area" in hit and hit["begin-area"]["id"] == area_id[0]):
                         artist = None
                         while artist is None:
                             try:
@@ -325,7 +338,7 @@ class MusicBrainzArtistsBelgium(object):
                         lijn = {
                             "band": hit["name"],
                             "mbid": hit["id"],
-                            "area": hit["area"]["name"],
+                            "area": hit["area"]["name"] if "area" in hit else None,
                             "begin-area": hit["begin-area"]["name"] if "begin-area" in hit else None,
                             "begin": hit["life-span"]['begin'] if "life-span" in hit and "begin" in hit["life-span"] else None,
                             "end": hit["life-span"]["end"] if "life-span" in hit and "end" in hit["life-span"] else None,
@@ -334,7 +347,8 @@ class MusicBrainzArtistsBelgium(object):
                             "facebook": str(facebook_url),
                             "songkick": str(songkick_url),
                             "bandsintown": str(bandsintown_url),
-                            "setlist": str(setlistfm_url)
+                            "setlist": str(setlistfm_url),
+                            "number_of_concerts": self.__number_of_concerts(hit["id"])
                         }
                         area_hits.append(lijn)
                 offset += limit
@@ -427,7 +441,7 @@ class DataKunstenBeConnector(object):
         self.cur.execute(sql)
         os = self.cur.fetchall()
         df = DataFrame(os, columns=["year", "month", "day", "artiest", "organisatie_naam", "organisatie_stad1", "organisatie_land1", "organisatie_stad2", "organisatie_land2", "organisatie_stad3", "organisatie_land3", "venue_naam", "venue_stad", "venue_land"])
-        df["datum"] = [datetime(int(row[1]["year"]), int(row[1]["month"]), int(row[1]["day"]) if row[1]["day"] > 0 else 1) for row in df.iterrows()]
+        df["datum"] = [datetime(int(row[1]["year"]), int(row[1]["month"]), int(row[1]["day"]) if row[1]["day"] > 0 else 1).date() for row in df.iterrows()]
         df["stad"] = [row[1]["venue_stad"] if row[1]["venue_stad"] is not None else row[1]["organisatie_stad3"] if row[1]["organisatie_stad3"]  is not None else row[1]["organisatie_stad2"] if row[1]["organisatie_stad2"]  is not None else row[1]["organisatie_stad1"] for row in df.iterrows()]
         df["land"] = [row[1]["venue_land"] if row[1]["venue_land"] else row[1]["organisatie_land3"] if row[1]["organisatie_land3"] else row[1]["organisatie_land2"] if row[1]["organisatie_land2"] else row[1]["organisatie_land1"] for row in df.iterrows()]
         df["venue"] = [row[1]["venue_naam"] if row[1]["venue_naam"] else row[1]["organisatie_naam"] for row in df.iterrows()]
@@ -465,6 +479,7 @@ df = DataFrame(lines)
 
 # add manually found concerts
 manual = read_excel("output/manual.xlsx")
+manual["datum"] = [datum.date() for datum in to_datetime(manual["datum"].values)]
 df = df.append(manual, ignore_index=True)
 
 # add concerts from database

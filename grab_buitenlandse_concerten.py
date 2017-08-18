@@ -27,12 +27,14 @@ class PlatformLeecher(object):
 
     def set_platform_identifiers(self):
         lst = read_excel("resources/belgian_mscbrnz_artists.xlsx")
+        ignore_list = read_excel("resources/ignore_list.xlsx")
         bands_done = set()
         for i in lst.index:
-            if lst.ix[i][self.platform] is not None and lst.ix[i][self.platform] != "None" and lst.ix[i]["band"] not in bands_done:
-                self.platform_identifiers.append((lst.ix[i][["band", "mbid", self.platform]]))
-            else:
-                bands_done.add(lst.ix[i]["band"])
+            if lst.ix[i]["mbid"] not in ignore_list["mbid"]:
+                if lst.ix[i][self.platform] is not None and lst.ix[i][self.platform] != "None" and lst.ix[i]["band"] not in bands_done:
+                    self.platform_identifiers.append((lst.ix[i][["band", "mbid", self.platform]]))
+                else:
+                    bands_done.add(lst.ix[i]["band"])
 
     def set_events_for_identifiers(self):
         for band, mbid, url in self.platform_identifiers:

@@ -225,6 +225,8 @@ class SetlistFmLeecher(PlatformLeecher):
 
 class MusicBrainzArtistsBelgium(object):
     def __init__(self, update=False):
+        concerts = read_excel("output/latest.xlsx")
+        self.aantal_concerten_per_mbid = concerts.groupby(["artiest_mb_id"])["event_id"].count()
         set_useragent("kunstenpunt", "0.1", "github.com/kunstenpunt")
         self.lijst = None
         if update:
@@ -295,12 +297,14 @@ class MusicBrainzArtistsBelgium(object):
         return artists
 
     def __number_of_concerts(self, mbid):
-        concerts = read_excel("../output/latest.xlsx")
-        aantal_concerten_per_mbid = concerts.groupby(["artiest_mb_id"])["event_id"].count()
         try:
-            return aantal_concerten_per_mbid.loc[mbid]
+            return self.aantal_concerten_per_mbid.loc[mbid]
         except KeyError:
             return 0
+
+    def __is_on_ignore_list(self, mbid):
+        ignore_list = read_excel("resources/ignore_list.xlsx")
+        return mbid in ignore_list["mbid"]
 
     def update_list(self):
         area_ids = [("5b8a5ee5-0bb3-34cf-9a75-c27c44e341fc", "Belgium")]
@@ -350,7 +354,8 @@ class MusicBrainzArtistsBelgium(object):
                             "songkick": str(songkick_url),
                             "bandsintown": str(bandsintown_url),
                             "setlist": str(setlistfm_url),
-                            "number_of_concerts": self.__number_of_concerts(hit["id"])
+                            "number_of_concerts": self.__number_of_concerts(hit["id"]),
+                            "on_ignore_list": self.__is_on_ignore_list(hit["id"])
                         }
                         area_hits.append(lijn)
                 offset += limit
@@ -511,7 +516,8 @@ for land in df["land"]:
                 country_cleaning_additions.add(land)
                 clean_country = None
         clean_countries.append(clean_country)
-country_cleaning.append(DataFrame([{"original": land, "clean": None} for land in country_cleaning_additions]), ignore_index=True).to_excel("resources/country_cleaning.xlsx")
+country_cleaning.append(DataFrame([{"original": land, "clean": None} for land in country_cleaning_additions]),
+                        ignore_index=True).to_excel("resources/country_cleaning.xlsx")
 df["land_clean"] = clean_countries
 
 # resolve dirty city names to clean city names
@@ -525,7 +531,8 @@ for stad in df["stad"]:
         city_cleaning_additions.add(stad)
         clean_city = None
     clean_cities.append(clean_city)
-city_cleaning.append(DataFrame([{"original": stad, "clean": None} for stad in city_cleaning_additions]), ignore_index=True).to_excel("resources/city_cleaning.xlsx")
+city_cleaning.append(DataFrame([{"original": stad, "clean": None} for stad in city_cleaning_additions]),
+                     ignore_index=True).to_excel("resources/city_cleaning.xlsx")
 df["stad_clean"] = clean_cities
 
 # mark duplicates
@@ -533,8 +540,14 @@ df["duplicaat?"] = df.duplicated(subset=["artiest_mb_naam", "datum", "stad_clean
 
 # create a diff for events
 previous = read_excel("output/latest.xlsx")
+previous["datum"] = [datum.date() if datum is not None else None for datum in previous["datum"]]
 diff = df[-df["event_id"].isin(previous["event_id"])]
-diff.to_excel("output/diff_" + str(datetime.now().date()) + ".xlsx")
+neg_diff = previous[-previous["event_id"].isin(df["event_id"])]
+neg_diff = neg_diff[neg_diff["datum"] < datetime.now().date()]  # keep only removed concerts
+neg_diff["deleted"] = ["deleted"] * len(neg_diff.index)
+diff.to_excel("output/diff_additions_" + str(datetime.now().date()) + ".xlsx")
+neg_diff.to_excel("output/diff_deletions_" + str(datetime.now().date()) + ".xlsx")
 
 # update latest file
-df.to_excel("output/latest.xlsx")
+super_df = df.append(neg_diff, ignore_index=True)
+super_df.to_excel("output/latest.xlsx")

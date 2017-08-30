@@ -30,11 +30,13 @@ class PlatformLeecher(object):
         ignore_list = read_excel("resources/ignore_list.xlsx")
         bands_done = set()
         for i in lst.index:
-            if lst.ix[i]["mbid"] not in ignore_list["mbid"]:
+            if lst.ix[i]["mbid"] not in ignore_list["mbid"].values:
                 if lst.ix[i][self.platform] is not None and lst.ix[i][self.platform] != "None" and lst.ix[i]["band"] not in bands_done:
                     self.platform_identifiers.append((lst.ix[i][["band", "mbid", self.platform]]))
                 else:
                     bands_done.add(lst.ix[i]["band"])
+            else:
+                print("ignoring", lst.ix[i]["band"])
 
     def set_events_for_identifiers(self):
         for band, mbid, url in self.platform_identifiers:
@@ -378,7 +380,7 @@ class DataKunstenBeConnector(object):
     def get_concerts_abroad(self):
         sql = """
             SELECT
-              d.year, d.month, d.day,
+              s.id, d.year, d.month, d.day,
               p.full_name artiest_volledige_naam,
               o.name organisatie_naam, o.city organisatie_stad, o_countries.iso_code organisatie_land,
               l_organisations.city_nl organisatie_locatie_stad, l_organisations_countries.iso_code organisatie_locatie_land,
@@ -447,7 +449,8 @@ class DataKunstenBeConnector(object):
         """
         self.cur.execute(sql)
         os = self.cur.fetchall()
-        df = DataFrame(os, columns=["year", "month", "day", "artiest", "organisatie_naam", "organisatie_stad1", "organisatie_land1", "organisatie_stad2", "organisatie_land2", "organisatie_stad3", "organisatie_land3", "venue_naam", "venue_stad", "venue_land"])
+        df = DataFrame(os, columns=["id", "year", "month", "day", "artiest", "organisatie_naam", "organisatie_stad1", "organisatie_land1", "organisatie_stad2", "organisatie_land2", "organisatie_stad3", "organisatie_land3", "venue_naam", "venue_stad", "venue_land"])
+        df["event_id"] = ["datakunstenbe_" + str(row[1]["id"]) for row in df.iterrows()]
         df["datum"] = [datetime(int(row[1]["year"]), int(row[1]["month"]), int(row[1]["day"]) if row[1]["day"] > 0 else 1).date() for row in df.iterrows()]
         df["stad"] = [row[1]["venue_stad"] if row[1]["venue_stad"] is not None else row[1]["organisatie_stad3"] if row[1]["organisatie_stad3"]  is not None else row[1]["organisatie_stad2"] if row[1]["organisatie_stad2"]  is not None else row[1]["organisatie_stad1"] for row in df.iterrows()]
         df["land"] = [row[1]["venue_land"] if row[1]["venue_land"] else row[1]["organisatie_land3"] if row[1]["organisatie_land3"] else row[1]["organisatie_land2"] if row[1]["organisatie_land2"] else row[1]["organisatie_land1"] for row in df.iterrows()]
@@ -487,7 +490,8 @@ df = DataFrame(lines)
 # add manually found concerts
 manual = read_excel("output/manual.xlsx")
 manual["datum"] = [datum.date() for datum in to_datetime(manual["datum"].values)]
-df = df.append(manual, ignore_index=True)
+manual["source"] = ["manual"] * len(manual.index)
+df = manual.append(df, ignore_index=True)
 
 # add concerts from database
 dkbc = DataKunstenBeConnector()
@@ -498,6 +502,30 @@ df = df.append(dkbc.concerts, ignore_index=True)
 for column in ["titel", "artiest", "venue", "artiest", "stad", "land"]:
     df[column] = df[column].map(lambda x: ''.join([str(c) for c in str(x) if ord(str(c)) > 31 or ord(str(c)) == 9]))
 
+# create a diff for added events
+previous = read_excel("output/latest.xlsx")
+previous["datum"] = [datum.date() if datum is not None else None for datum in previous["datum"]]
+diff = df[-df["event_id"].isin(previous["event_id"])]
+diff.to_excel("output/diff_additions_" + str(datetime.now().date()) + ".xlsx")
+
+# create a diff for deleted events
+previous_not_deleted = previous[previous["deleted"].notnull()]
+previous_deleted = previous[previous["deleted"].isnull()]
+neg_diff = previous_not_deleted[-previous_not_deleted["event_id"].isin(df["event_id"])]
+neg_diff_passed = neg_diff[neg_diff["datum"] < datetime.now().date()]  # keep removed concerts that have already passed
+neg_diff_passed["deleted"] = [True] * len(neg_diff_passed.index)
+neg_diff_passed.to_excel("output/diff_deletions_" + str(datetime.now().date()) + ".xlsx")
+
+# create a diff for cancelled events
+neg_diff_future = neg_diff[neg_diff["datum"] >= datetime.now().date()]  # keep removed concerts that have not yet passed
+neg_diff_future.to_excel("output/diff_cancellations_" + str(datetime.now().date()) + ".xlsx")
+
+# update latest file
+df = df.append(neg_diff_passed, ignore_index=True).append(previous_deleted, ignore_index=True)
+
+# keep track whether an event is on setlist and deleted, because then it should be really ignored
+df["setlist_deleted"] = (df["source"] == "setlist") & df["deleted"]
+
 # resolve full country names to iso code
 clean_countries = []
 country_cleaning = read_excel("resources/country_cleaning.xlsx")
@@ -505,10 +533,12 @@ country_cleaning_additions = set()
 for land in df["land"]:
     land = land.strip()
     if len(land) == 2:
-        clean_countries.append(land)
+        clean_country = "UK" if land == "GB" else land
+        clean_countries.append(clean_country)
     else:
         try:
             clean_country = countries.get(name=land).alpha_2
+            clean_country = "UK" if clean_country == "GB" else clean_country
         except KeyError:
             if land in country_cleaning["original"].values:
                 clean_country = country_cleaning[country_cleaning["original"] == land]["clean"].iloc[0]
@@ -535,19 +565,8 @@ city_cleaning.append(DataFrame([{"original": stad, "clean": None} for stad in ci
                      ignore_index=True).to_excel("resources/city_cleaning.xlsx")
 df["stad_clean"] = clean_cities
 
-# mark duplicates
+# remove true duplicates, and mark assumed duplicates
+df.drop_duplicates(subset=["event_id"], inplace=True)
 df["duplicaat?"] = df.duplicated(subset=["artiest_mb_naam", "datum", "stad_clean", ])
 
-# create a diff for events
-previous = read_excel("output/latest.xlsx")
-previous["datum"] = [datum.date() if datum is not None else None for datum in previous["datum"]]
-diff = df[-df["event_id"].isin(previous["event_id"])]
-neg_diff = previous[-previous["event_id"].isin(df["event_id"])]
-neg_diff = neg_diff[neg_diff["datum"] < datetime.now().date()]  # keep only removed concerts
-neg_diff["deleted"] = ["deleted"] * len(neg_diff.index)
-diff.to_excel("output/diff_additions_" + str(datetime.now().date()) + ".xlsx")
-neg_diff.to_excel("output/diff_deletions_" + str(datetime.now().date()) + ".xlsx")
-
-# update latest file
-super_df = df.append(neg_diff, ignore_index=True)
-super_df.to_excel("output/latest.xlsx")
+df.to_excel("output/latest.xlsx")

@@ -5,6 +5,7 @@ resources/setlist_api_key.txt
 resources/20170320_vibe.html
 resources/*html
 providers/
-output/
+output/diff*
+output/manual.xlsx
 .idea/
 scripts/

@@ -1,11 +1,6 @@
-resources/songkick_api_key.txt
-resources/db.cfg
-resources/facebook_access_token.txt
-resources/setlist_api_key.txt
-resources/20170320_vibe.html
-resources/*html
+resources/
 providers/
-output/diff*
-output/manual.xlsx
+output/
 .idea/
 scripts/
+client_secrets.json

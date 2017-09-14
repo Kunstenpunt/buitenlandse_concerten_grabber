@@ -484,23 +484,23 @@ class DriveSyncer(object):
         gauth.LoadCredentialsFile("resources/credentials.json")
         gauth.SaveCredentialsFile("resources/credentials.json")
         self.drive = GoogleDrive(gauth)
+        self.resource_files_gdrive_ids = [
+            ("belgian_mscbrnz_artists.xlsx", "1tKXyj_fySMTlAv0w4JVPDa7I0LzRY-5gx5Cf1pnG76A"),
+            ("city_cleaning.xlsx", "12Ad6Yony5mvYVKHZQe4dRkod3jUgGd2xKVjJZcb-75Q"),
+            ("country_cleaning.xlsx", "1HCVWAGLPrT572bZNbJLNhEd4qckF65x6lmYTTLf93dE"),
+            ("ignore_list.xlsx", "1YeB7NcqFqU7Cnd_WcyeA8a7b-MrOe07uv18p_2Qovio"),
+            ("manual.xlsx", "1OxF3zHB2FeM6PKasJLdPLzgFKM8gV_oj7-NlcjQJuow"),
+            ("merge_artists.xlsx", "1su7MRynSZO9T1RTcH9hvJ_Gafudb58jREmHm01_n80k")
+        ]
 
     def downstream(self):
-        self.update_local_resource("belgian_mscbrnz_artists.xlsx", "1tKXyj_fySMTlAv0w4JVPDa7I0LzRY-5gx5Cf1pnG76A")
-        self.update_local_resource("city_cleaning.xlsx", "12Ad6Yony5mvYVKHZQe4dRkod3jUgGd2xKVjJZcb-75Q")
-        self.update_local_resource("country_cleaning.xlsx", "1HCVWAGLPrT572bZNbJLNhEd4qckF65x6lmYTTLf93dE")
-        self.update_local_resource("ignore_list.xlsx", "1YeB7NcqFqU7Cnd_WcyeA8a7b-MrOe07uv18p_2Qovio")
-        self.update_local_resource("manual.xlsx", "1OxF3zHB2FeM6PKasJLdPLzgFKM8gV_oj7-NlcjQJuow")
-        self.update_local_resource("merge_artists.xlsx", "1su7MRynSZO9T1RTcH9hvJ_Gafudb58jREmHm01_n80k")
+        for item in self.resource_files_gdrive_ids:
+            self.update_local_resource(item[0], item[1])
         self.update_local_latest()
 
     def upstream(self):
-        self.update_remote_resource("belgian_mscbrnz_artists.xlsx", "1tKXyj_fySMTlAv0w4JVPDa7I0LzRY-5gx5Cf1pnG76A")
-        self.update_remote_resource("city_cleaning.xlsx", "12Ad6Yony5mvYVKHZQe4dRkod3jUgGd2xKVjJZcb-75Q")
-        self.update_remote_resource("country_cleaning.xlsx", "1HCVWAGLPrT572bZNbJLNhEd4qckF65x6lmYTTLf93dE")
-        self.update_remote_resource("ignore_list.xlsx", "1YeB7NcqFqU7Cnd_WcyeA8a7b-MrOe07uv18p_2Qovio")
-        self.update_remote_resource("manual.xlsx", "1OxF3zHB2FeM6PKasJLdPLzgFKM8gV_oj7-NlcjQJuow")
-        self.update_remote_resource("merge_artists.xlsx", "1su7MRynSZO9T1RTcH9hvJ_Gafudb58jREmHm01_n80k")
+        for item in self.resource_files_gdrive_ids:
+            self.update_remote_resource(item[0], item[1])
         self.update_remote_latest()
 
     def update_local_resource(self, filename, fid):

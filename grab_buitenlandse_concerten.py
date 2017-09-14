@@ -709,5 +709,6 @@ class Grabber(object):
         self.df.to_excel("output/latest.xlsx")
 
 
-grabber = Grabber(update_from_musicbrainz=False)
-grabber.grab()
+if __name__ == "__main__":
+    grabber = Grabber(update_from_musicbrainz=False)
+    grabber.grab()

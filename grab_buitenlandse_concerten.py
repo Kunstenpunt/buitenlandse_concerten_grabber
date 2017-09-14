@@ -590,6 +590,9 @@ df["last_seen_on"] = [date.date() for date in df["last_seen_on"]]
 # because of this, we keep potential corrections in earlier versions.
 df.drop_duplicates(subset=["event_id"], keep="first", inplace=True)
 
+# add a genre to each concert based on the artist
+df["maingenre"] = [mbab.maingenres[mbid] if mbid in mbab.maingenres else "Rest" for mbid in df["artiest_mb_id"]]
+
 # update date of previous events that are also seen currently
 updated_event_ids = previous[previous["event_id"].isin(current["event_id"])]["event_id"].values
 updated_event_ids_index = df[df["event_id"].isin(updated_event_ids)].index

@@ -234,7 +234,7 @@ class SetlistFmLeecher(PlatformLeecher):
 class MusicBrainzArtistsBelgium(object):
     def __init__(self, update=False):
         concerts = read_excel("output/latest.xlsx")
-        concerts_abroad_future = concerts[(concerts["land_clean"] != "BE") & (concerts["datum"] > datetime.now())]
+        concerts_abroad_future = concerts[(concerts["land_clean"] not in ["BE", None, "Unknown", ""]) & (concerts["datum"] > datetime.now())]
         self.aantal_concerten_per_mbid = concerts_abroad_future.groupby(["artiest_mb_id"])["event_id"].count()
         set_useragent("kunstenpunt", "0.1", "github.com/kunstenpunt")
         self.lijst = None

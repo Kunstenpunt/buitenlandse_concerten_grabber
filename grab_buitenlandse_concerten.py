@@ -87,7 +87,7 @@ class SongkickLeecher(PlatformLeecher):
         return {
             "titel": event["displayName"].strip(),
             "datum": dateparse(event["start"]["date"]).date(),
-            "eindatum": dateparse(event["end"]["date"]).date(),
+            "eindatum": dateparse(event["end"]["date"]).date() if "end" in event else None,
             "artiest": other["artist_name"],
             "artiest_id": "songkick_" + str(other["artist_id"]),
             "artiest_mb_naam": band,
@@ -239,8 +239,8 @@ class MusicBrainzArtistsBelgium(object):
         set_useragent("kunstenpunt", "0.1", "github.com/kunstenpunt")
         self.lijst = None
         self.maingenres = {}
+        self.make_genre_mapping()
         if update:
-            self.make_genre_mapping()
             self.update_list()
 
     def make_genre_mapping(self):
@@ -547,6 +547,8 @@ class Grabber(object):
         self.add_manual_concerts()
         self.add_datakunstenbe_concerts()
         self.update_previous_version()
+        self.clean_country_names()
+        self.clean_city_names()
         self.make_concerts()
         self.infer_cancellations()
         self.persist_output()
@@ -605,7 +607,7 @@ class Grabber(object):
         self.df = previous.append(self.current, ignore_index=True)
 
         # fix the dates of last seen on
-        self.df["last_seen_on"] = [date.date() for date in self.df["last_seen_on"]]
+        self.df["last_seen_on"] = [date.date() if isinstance(date, datetime) else date for date in self.df["last_seen_on"]]
 
         # remove duplicates on the basis of the event_id, and keep the first, which is the oldest observation
         # because of this, we keep potential corrections in earlier versions.
@@ -703,7 +705,7 @@ class Grabber(object):
         self.df["ignore"].fillna(False, inplace=True)
 
     def infer_cancellations(self):
-        self.df["cancelled"] = (self.df["datum"] > datetime.now()) & (self.df["last_seen_on"] < datetime.now())
+        self.df["cancelled"] = (self.df["datum"] > datetime.now().date()) & (self.df["last_seen_on"] < datetime.now().date())
 
     def persist_output(self):
         self.df.to_excel("output/latest.xlsx")

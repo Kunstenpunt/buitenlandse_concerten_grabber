@@ -1,9 +1,10 @@
-from pandas import read_excel, DataFrame, to_datetime
+from pandas import read_excel, DataFrame, to_datetime, isnull
+from os import remove
 from re import sub
 from musicbrainzngs import set_useragent, search_artists, get_area_by_id, musicbrainz, get_artist_by_id
 from codecs import open
 from time import sleep
-from json import loads, dumps, dump, load, decoder
+from json import loads, dump, load, decoder
 from requests import get, exceptions
 from math import ceil
 from datetime import datetime, timedelta
@@ -20,8 +21,6 @@ from resources.sendmail.sendmessage import sendmail
 
 
 class PlatformLeecher(object):
-    """Abstract class defining the interface for every class that will leech concerts from an online platform"""
-
     def __init__(self):
         self.platform_identifiers = []
         self.platform_access_granter = None
@@ -35,7 +34,7 @@ class PlatformLeecher(object):
         for i in lst.index:
             row = lst.ix[i]
             if row["mbid"] not in ignore_list["mbid"].values:
-                if row[self.platform] is not None and row[self.platform] != "None" and row["band"] not in bands_done:
+                if not isnull(row[self.platform]) and row["band"] not in bands_done:
                     self.platform_identifiers.append((row[["band", "mbid", self.platform]]))
                 else:
                     bands_done.add(row["band"])
@@ -43,9 +42,10 @@ class PlatformLeecher(object):
                 print("ignoring", row["band"])
 
     def set_events_for_identifiers(self):
-        for band, mbid, url in self.platform_identifiers:
-            print(self.platform, band)
-            self.set_events_for_identifier(band, mbid, url)
+        for band, mbid, urls in self.platform_identifiers:
+            for url in urls.split(","):
+                print(band, url)
+                self.set_events_for_identifier(band, mbid, url)
 
     def set_events_for_identifier(self, band, mbid, url):
         raise NotImplementedError
@@ -72,10 +72,7 @@ class SongkickLeecher(PlatformLeecher):
         page = 1
         url = base_url.format(artistid, self.platform_access_granter, page)
         html = get(url).text
-        if html is not None:
-            json_response = loads(html)
-        else:
-            json_response = {}
+        json_response = loads(html) if html is not None else {}
         if "resultsPage" in json_response:
             resultspaga = json_response["resultsPage"]
             amount_events = resultspaga["totalEntries"] if "totalEntries" in resultspaga else 0
@@ -83,8 +80,7 @@ class SongkickLeecher(PlatformLeecher):
             while page <= amount_pages:
                 if json_response["resultsPage"]["status"] == "ok":
                     for event in json_response["resultsPage"]["results"]["event"]:
-                        self.events.append(self.map_platform_to_schema(event, band, mbid, {"artist_id": artistid,
-                                                                                           "artist_name": artistname}))
+                        self.events.append(self.map_platform_to_schema(event, band, mbid, {"artist_id": artistid, "artist_name": artistname}))
                     page += 1
                     url = base_url.format(artistid, self.platform_access_granter, page)
                     html = get(url).text
@@ -95,10 +91,11 @@ class SongkickLeecher(PlatformLeecher):
                         json_response = {}
 
     def map_platform_to_schema(self, event, band, mbid, other):
+        concertdate = dateparse(event["start"]["date"]).date()
         return {
-            "titel": event["displayName"].strip(),
-            "datum": dateparse(event["start"]["date"]).date(),
-            "eindatum": dateparse(event["end"]["date"]).date() if "end" in event else None,
+            "titel": event["displayName"].strip().rstrip(concertdate.strftime("%B %d, %Y")),
+            "datum": concertdate,
+            "einddatum": dateparse(event["end"]["date"]).date() if "end" in event else None,
             "artiest": other["artist_name"],
             "artiest_id": "songkick_" + str(other["artist_id"]),
             "artiest_mb_naam": band,
@@ -122,7 +119,6 @@ class BandsInTownLeecher(PlatformLeecher):
 
     def set_events_for_identifier(self, band, mbid, url):
         period = "1900-01-01,2050-01-01"
-
         bandnaam = urlparse.unquote(url.split("/")[-1].split("?came_from")[0])
         events = None
         while events is None:
@@ -174,33 +170,36 @@ class FacebookEventLeecher(PlatformLeecher):
             fb_token = f.read()
         self.graph = facebook.GraphAPI(access_token=fb_token, version=2.10)
         self.platform = "facebook"
+        remove("resources/facebook_errors.txt")
 
     def set_events_for_identifier(self, band, mbid, url):
-        page_label = url.split("/")[-1]
-        if "-" in page_label:
-            page_label = page_label.split("-")[-1]
+        page_label = url.split("/")[-1].split("-")[-1] if "-" in url.split("/")[-1] else url.split("/")[-1]
         try:
             events = self.graph.get_connections(id=page_label, connection_name="events")
             if "data" in events:
                 for concert in events["data"]:
                     self.events.append(self.map_platform_to_schema(concert, band, mbid, {"page_label": page_label}))
         except facebook.GraphAPIError as e:
-            print("Facebook error:", e)
-            pass
-        except exceptions.ConnectionError as e:
+            if "#803" not in str(e):
+                with open("resources/facebook_errors.txt", "a") as f:
+                    f.write(datetime.now().date().isoformat() + "\t" + str(e) + "\n")
+        except exceptions.ConnectionError:
             self.set_events_for_identifier(band, mbid, url)
 
     def map_platform_to_schema(self, concert, band, mbid, other):
+        venue = concert["place"]["name"] if "place" in concert else None
+        stad = concert["place"]["location"]["city"] if "place" in concert and "location" in concert["place"] and "city" in concert["place"]["location"] else None
+        land = concert["place"]["location"]["country"] if "place" in concert and "location" in concert["place"] and "country" in concert["place"]["location"] else None
         return {
-            "titel": concert["name"] if "name" in concert else None,
+            "titel": concert["name"] if "name" in concert else band + " @ " + venue + " in " + stad + ", " + land,
             "datum": dateparse(concert["start_time"]).date(),
             "artiest": band,
             "artiest_id": "facebook_" + other["page_label"],
             "artiest_mb_naam": band,
             "artiest_mb_id": mbid,
-            "stad": concert["place"]["location"]["city"] if "place" in concert and "location" in concert["place"] and "city" in concert["place"]["location"] else None,
-            "land": concert["place"]["location"]["country"] if "place" in concert and "location" in concert["place"] and "country" in concert["place"]["location"] else None,
-            "venue": concert["place"]["name"] if "place" in concert else None,
+            "stad": stad,
+            "land": land,
+            "venue": venue,
             "latitude": concert["place"]["location"]["latitude"] if "place" in concert and "location" in concert["place"] and "latitude" in concert["place"]["location"] else None,
             "longitude": concert["place"]["location"]["longitude"] if "place" in concert and "location" in concert["place"] and "longitude" in concert["place"]["location"] else None,
             "source": self.platform,
@@ -234,7 +233,7 @@ class SetlistFmLeecher(PlatformLeecher):
 
     def map_platform_to_schema(self, concert, band, mbid, other):
         return {
-            "titel": concert["info"] if "info" in concert else None,
+            "titel": concert["info"] if "info" in concert else band + " @ " + concert["venue"]["name"] + " in " + concert["venue"]["city"]["name"] + ", " + concert["venue"]["city"]["country"]["code"],
             "datum": dateparse(concert["eventDate"], ["%d-%m-%Y"]).date(),
             "artiest": concert["artist"]["name"],
             "artiest_id": "setlist_" + concert["artist"]["url"],
@@ -245,7 +244,7 @@ class SetlistFmLeecher(PlatformLeecher):
             "venue": concert["venue"]["name"],
             "latitude": concert["venue"]["city"]["coords"]["lat"] if "lat" in concert["venue"]["city"]["coords"] else None,
             "longitude": concert["venue"]["city"]["coords"]["long"] if "long" in concert["venue"]["city"]["coords"] else None,
-            "source": "setlist",
+            "source": self.platform,
             "event_id": "setlist" + concert["id"]
         }
 
@@ -254,11 +253,9 @@ class MusicBrainzArtistsBelgium(object):
     def __init__(self, update=False):
         self.update = update
         self.aantal_concerten_per_mbid = None
-        self.calculate_concerts_abroad()
         set_useragent("kunstenpunt", "0.1", "github.com/kunstenpunt")
         self.lijst = None
         self.maingenres = {}
-        self.make_genre_mapping()
 
     def calculate_concerts_abroad(self):
         concerts = read_excel("output/latest.xlsx")
@@ -266,7 +263,6 @@ class MusicBrainzArtistsBelgium(object):
         self.aantal_concerten_per_mbid = concerts_abroad_future.groupby(["artiest_mb_id"])["event_id"].count()
 
     def make_genre_mapping(self):
-        self.load_list()
         for row in self.lijst.iterrows():
             key = row[1]["mbid"]
             value = row[1]["maingenre"]
@@ -293,14 +289,16 @@ class MusicBrainzArtistsBelgium(object):
 
     @staticmethod
     def __get_rel_url(artist, urltype, domain=None):
+        urls = []
         if "url-relation-list" in artist:
             for url in artist["url-relation-list"]:
                 if url["type"] == urltype:
                     if domain:
                         if domain in url["target"]:
-                            return url["target"]
+                            urls.append(url["target"])
                     else:
-                        return url["target"]
+                        urls.append(url["target"])
+        return ",".join(urls)
 
     @staticmethod
     def __make_artist_name(n):
@@ -363,7 +361,6 @@ class MusicBrainzArtistsBelgium(object):
             print("finding artists in", area_id)
             offset = 0
             limit = 100
-            area_hits = []
             total_search_results = 1
             while offset < total_search_results:
                 search_results = self.__search_artists_in_area(area_id[1], limit, offset)
@@ -373,58 +370,48 @@ class MusicBrainzArtistsBelgium(object):
                         while artist is None:
                             try:
                                 sleep(1.0)
-                                artist = get_artist_by_id(hit["id"], includes=["url-rels"])
+                                artist = get_artist_by_id(hit["id"], includes=["url-rels"])["artist"]
                             except musicbrainz.NetworkError:
                                 sleep(25.0)
-                        songkick_url = self.__get_rel_url(artist["artist"], "songkick")
-                        bandsintown_url = self.__get_rel_url(artist["artist"], "bandsintown")
-                        setlistfm_url = self.__get_rel_url(artist["artist"], "setlistfm")
-                        facebook_url = self.__get_rel_url(artist["artist"], "social network", "facebook.com")
-                        print(hit["name"])
-                        lijn = {
-                            "band": hit["name"],
-                            "mbid": hit["id"],
-                            "area": hit["area"]["name"] if "area" in hit else None,
-                            "begin-area": hit["begin-area"]["name"] if "begin-area" in hit else None,
-                            "begin": hit["life-span"]['begin'] if "life-span" in hit and "begin" in hit["life-span"] else None,
-                            "end": hit["life-span"]["end"] if "life-span" in hit and "end" in hit["life-span"] else None,
-                            "ended": hit["life-span"]["ended"] if "life-span" in hit and "ended" in hit["life-span"] else None,
-                            "disambiguation": hit["disambiguation"] if "disambiguation" in hit else None,
-                            "facebook": str(facebook_url),
-                            "songkick": str(songkick_url),
-                            "bandsintown": str(bandsintown_url),
-                            "setlist": str(setlistfm_url),
-                            "number_of_concerts": self.__number_of_concerts(hit["id"]),
-                            "on_ignore_list": self.__is_on_ignore_list(hit["id"]),
-                            "maingenre": self.maingenres[hit["id"]] if hit["id"] in self.maingenres else "(tbc)"
-                        }
-                        area_hits.append(lijn)
+                        print("adding", artist["name"])
+                        lijn = self.mb_lijn(artist)
+                        belgium.append(lijn)
                 offset += limit
                 total_search_results = search_results["artist-count"]
-            belgium.extend(area_hits)
 
         for mbid in read_excel("resources/grace_list.xlsx")["mbid"].values:
-            artist = get_artist_by_id(mbid)["artist"]
-            lijn = {
-                "band": artist["name"],
-                "mbid": artist["id"],
-                "area": artist["area"]["name"] if "area" in artist else None,
-                "begin-area": artist["begin-area"]["name"] if "begin-area" in artist else None,
-                "begin": artist["life-span"]['begin'] if "life-span" in artist and "begin" in artist["life-span"] else None,
-                "end": artist["life-span"]["end"] if "life-span" in artist and "end" in artist["life-span"] else None,
-                "ended": artist["life-span"]["ended"] if "life-span" in artist and "ended" in artist["life-span"] else None,
-                "disambiguation": hit["disambiguation"] if "disambiguation" in hit else None,
-                "facebook": str(self.__get_rel_url(artist, "social_network", "facebook.com")),
-                "songkick": str(self.__get_rel_url(artist, "songkick")),
-                "bandsintown": str(self.__get_rel_url(artist, "bandsintown")),
-                "setlist": str(self.__get_rel_url(artist, "setlistfm")),
-                "number_of_concerts": self.__number_of_concerts(artist["id"]),
-                "on_ignore_list": self.__is_on_ignore_list(artist["id"]),
-                "maingenre": self.maingenres[artist["id"]] if artist["id"] in self.maingenres else "(tbc)"
-            }
+            artist = None
+            while artist is None:
+                try:
+                    sleep(1.0)
+                    artist = get_artist_by_id(mbid, includes=["url-rels"])["artist"]
+                except musicbrainz.NetworkError:
+                    sleep(25.0)
+            print("gracing", artist["name"])
+            lijn = self.mb_lijn(artist)
             belgium.append(lijn)
 
-        DataFrame(belgium).drop_duplicates(subset="mbid").to_excel("resources/belgian_mscbrnz_artists.xlsx")
+        self.lijst = DataFrame(belgium).drop_duplicates(subset="mbid")
+        self.lijst.to_excel("resources/belgian_mscbrnz_artists.xlsx")
+
+    def mb_lijn(self, hit):
+        return {
+            "band": hit["name"],
+            "mbid": hit["id"],
+            "area": hit["area"]["name"] if "area" in hit else None,
+            "begin-area": hit["begin-area"]["name"] if "begin-area" in hit else None,
+            "begin": hit["life-span"]['begin'] if "life-span" in hit and "begin" in hit["life-span"] else None,
+            "end": hit["life-span"]["end"] if "life-span" in hit and "end" in hit["life-span"] else None,
+            "ended": hit["life-span"]["ended"] if "life-span" in hit and "ended" in hit["life-span"] else None,
+            "disambiguation": hit["disambiguation"] if "disambiguation" in hit else None,
+            "facebook": str(self.__get_rel_url(hit, "social network", "facebook.com")),
+            "songkick": str(self.__get_rel_url(hit, "songkick")),
+            "bandsintown": str(self.__get_rel_url(hit, "bandsintown")),
+            "setlist": str(self.__get_rel_url(hit, "setlistfm")),
+            "number_of_concerts": self.__number_of_concerts(hit["id"]),
+            "on_ignore_list": self.__is_on_ignore_list(hit["id"]),
+            "maingenre": self.maingenres[hit["id"]] if hit["id"] in self.maingenres else "(tbc)"
+        }
 
 
 class DataKunstenBeConnector(object):
@@ -528,7 +515,7 @@ class DriveSyncer(object):
         gauth.LoadCredentialsFile("resources/credentials.json")
         gauth.SaveCredentialsFile("resources/credentials.json")
         self.drive = GoogleDrive(gauth)
-        resource_files = [
+        self.resource_files = [
             "belgian_mscbrnz_artists.xlsx",
             "city_cleaning.xlsx",
             "country_cleaning.xlsx",
@@ -537,7 +524,10 @@ class DriveSyncer(object):
             "manual.xlsx",
             "merge_artists.xlsx"
         ]
-        self.resource_files_gdrive_ids = [(resource_file, self.get_google_drive_id(resource_file)) for resource_file in resource_files]
+        self.resource_files_gdrive_ids = None
+
+    def set_resource_files_ids(self):
+        self.resource_files_gdrive_ids = [(resource_file, self.get_google_drive_id(resource_file)) for resource_file in self.resource_files]
 
     def get_google_drive_id(self, filename):
         return self.drive.ListFile({'q': "'0B4I3gofjeGMHRFhZbzNzLTJCQU0' in parents and title='{0}' and trashed=false".format(filename)}).GetList()[0]["id"]
@@ -588,81 +578,21 @@ class Reporter(object):
             self.previous_report = load(f)
 
         self.drive = drive
-
+        self.aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre = None
+        self.aantal_nieuwe_concerten = None
         self.old_status_ignore = None
+        self.old_status_musicbrainz = None
         self.old_status_city_cleaning = None
         self.old_status_country_cleaning = None
-        self.old_status_musicbrainz = None
-
         self.current_status_ignore = None
-        self.current_status_of_city_cleaning = None
-        self.current_status_of_country_cleaning = None
+        self.current_status_city_cleaning = None
+        self.current_status_country_cleaning = None
         self.current_status_musicbrainz = None
-
-        self.report = None
-
-        # rapportage
-        self.datum_recentste_check = datetime.now()
-        self.datum_vorige_check = None
-
-        self.nieuwe_facebook_concerten = None
-        self.nieuwe_facebook_concerten_artiesten = None
-        self.nieuwe_facebook_concerten_landen = None
-        self.nieuwe_songkick_concerten = None
-        self.nieuwe_songkick_concerten_artiesten = None
-        self.nieuwe_songkick_concerten_landen = None
-        self.nieuwe_bandsintown_concerten = None
-        self.nieuwe_bandsintown_concerten_artiesten = None
-        self.nieuwe_bandsintown_concerten_landen = None
-        self.nieuwe_setlist_concerten = None
-        self.nieuwe_setlist_concerten_artiesten = None
-        self.nieuwe_setlist_concerten_landen = None
-        self.nieuwe_datakunstenbe_concerten = None
-        self.nieuwe_datakunstenbe_concerten_artiesten = None
-        self.nieuwe_datakunstenbe_concerten_landen = None
-        self.nieuwe_manual_concerten = None
-        self.nieuwe_manual_concerten_artiesten = None
-        self.nieuwe_manual_concerten_landen = None
-
-        self.aantal_nieuwe_concerten = None
-
         self.aantal_ongecleande_steden = None
-        self.link_naar_city_cleaning = None
         self.aantal_ongecleande_landen = None
-        self.link_naar_country_cleaning = None
-
-        self.link_naar_diff_nieuwe_concerten = None
-        self.link_naar_latest = None
-
-        self.huidig_aantal_musicbrainz_artiesten = None
-        self.vorig_aantal_musicbrainz_artiesten = None
-        self.aantal_nieuwe_musicbrainz_artiesten = None
-        self.link_naar_diff_nieuwe_musicbrainz_artiesten = None
-        self.link_naar_musicbrainz_artiesten = None
-
-        self.aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre = None
-
-        self.vorig_aantal_genegeerde_mb_belgen = None
-        self.aantal_genegeerde_mb_belgen = None
-        self.link_naar_ignore = None
-
-    def set_link_naar_country_cleaning(self):
-        self.link_naar_country_cleaning = self.drive.get_google_drive_link("country_cleaning.xlsx")
-
-    def set_link_naar_city_cleaning(self):
-        self.link_naar_city_cleaning = self.drive.get_google_drive_link("city_cleaning.xlsx")
-
-    def set_link_naar_latest(self):
-        self.link_naar_latest = self.drive.get_google_drive_link("latest.xlsx")
-
-    def set_link_naar_ignore(self):
-        self.link_naar_ignore = self.drive.get_google_drive_link("ignore_list.xlsx")
-
-    def set_link_naar_musicbrainz_artiesten(self):
-        self.link_naar_musicbrainz_artiesten = self.drive.get_google_drive_link("belgian_mscbrnz_artists.xlsx")
-
-    def set_link_naar_diff_nieuwe_musicbrainz_artiesten(self):
-        self.link_naar_diff_nieuwe_musicbrainz_artiesten = self.drive.get_google_drive_link("belgian_mscbrnz_artists_diff.xlsx")
+        self.report = None
+        self.datum_vorige_check = None
+        self.datum_recentste_check = datetime.now()
 
     def set_aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre(self):
         has_concerts = self.current_status_musicbrainz["number_of_concerts"] > 0
@@ -676,87 +606,41 @@ class Reporter(object):
 
     def take_snapshot_of_status(self, timing):
         if timing == "old":
-            self.set_old_status_of_ignore()
-            self.set_old_state_of_musicbrainz()
-            self.set_old_status_of_city_cleaning()
-            self.set_old_status_of_country_cleaning()
+            self.old_status_ignore = read_excel("resources/ignore_list.xlsx")
+            self.old_status_musicbrainz = read_excel("resources/belgian_mscbrnz_artists.xlsx")
+            self.old_status_city_cleaning = read_excel("resources/city_cleaning.xlsx")
+            self.old_status_country_cleaning = read_excel("resources/country_cleaning.xlsx")
         if timing == "current":
-            self.set_current_status_of_ignore()
-            self.set_current_status_of_city_cleaning()
-            self.set_current_status_of_country_cleaning()
-            self.set_current_status_of_musicbrainz()
+            self.current_status_ignore = read_excel("resources/ignore_list.xlsx")
+            self.current_status_city_cleaning = read_excel("resources/city_cleaning.xlsx")
+            self.current_status_country_cleaning = read_excel("resources/country_cleaning.xlsx")
+            self.current_status_musicbrainz = read_excel("resources/belgian_mscbrnz_artists.xlsx")
 
     def compare_current_with_old_status(self):
         self.set_datum_vorige_check()
         self.compare_city_cleaning()
         self.compare_country_cleaning()
         self.compare_musicbrainz()
-        self.compare_ignore_list()
 
     def compare_city_cleaning(self):
-        empty_cleaning = self.current_status_of_city_cleaning["clean"].isnull()
-        self.aantal_ongecleande_steden = len(self.current_status_of_city_cleaning[empty_cleaning].index)
+        empty_cleaning = self.current_status_city_cleaning["clean"].isnull()
+        self.aantal_ongecleande_steden = len(self.current_status_city_cleaning[empty_cleaning].index)
 
     def compare_country_cleaning(self):
-        empty_cleaning = self.current_status_of_country_cleaning["clean"].isnull()
-        self.aantal_ongecleande_landen = len(self.current_status_of_country_cleaning[empty_cleaning].index)
-
-    def compare_ignore_list(self):
-        self.aantal_genegeerde_mb_belgen = len(self.current_status_ignore.index)
-        self.vorig_aantal_genegeerde_mb_belgen = len(self.old_status_ignore.index)
+        empty_cleaning = self.current_status_country_cleaning["clean"].isnull()
+        self.aantal_ongecleande_landen = len(self.current_status_country_cleaning[empty_cleaning].index)
 
     def compare_musicbrainz(self):
-        self.huidig_aantal_musicbrainz_artiesten = len(self.current_status_musicbrainz.index)
-        self.vorig_aantal_musicbrainz_artiesten = len(self.old_status_musicbrainz.index)
         appended = self.current_status_musicbrainz.append(self.old_status_musicbrainz)
         appended.drop_duplicates(keep=False, inplace=True)
-        self.aantal_nieuwe_musicbrainz_artiesten = len(appended.index)
         appended.to_excel("resources/belgian_mscbrnz_artists_diff.xlsx")
-
         fid = self.drive.get_google_drive_id("belgian_mscbrnz_artists_diff.xlsx")
         self.drive.upload_file_to_leeches("resources/belgian_mscbrnz_artists_diff.xlsx", fid)
 
-        self.link_naar_diff_nieuwe_musicbrainz_artiesten = self.drive.get_google_drive_link("belgian_mscbrnz_artists_diff.xlsx")
-        self.link_naar_musicbrainz_artiesten = self.drive.get_google_drive_link("belgian_mscbrnz_artists_diff.xlsx")
-
-    def set_current_status_of_ignore(self):
-        self.current_status_ignore = read_excel("resources/ignore_list.xlsx")
-
-    def set_current_status_of_city_cleaning(self):
-        self.current_status_of_city_cleaning = read_excel("resources/city_cleaning.xlsx")
-
-    def set_current_status_of_country_cleaning(self):
-        self.current_status_of_country_cleaning = read_excel("resources/country_cleaning.xlsx")
-
-    def set_current_status_of_musicbrainz(self):
-        self.current_status_musicbrainz = read_excel("resources/belgian_mscbrnz_artists.xlsx")
-
-    def set_old_status_of_ignore(self):
-        self.old_status_ignore = read_excel("resources/ignore_list.xlsx")
-
-    def set_old_status_of_city_cleaning(self):
-        self.old_status_city_cleaning = read_excel("resources/city_cleaning.xlsx")
-
-    def set_old_status_of_country_cleaning(self):
-        self.old_status_country_cleaning = read_excel("resources/country_cleaning.xlsx")
-
-    def set_old_state_of_musicbrainz(self):
-        self.old_status_musicbrainz = read_excel("resources/belgian_mscbrnz_artists.xlsx")
-
     def do(self):
         self.set_aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre()
-
         self.compare_current_with_old_status()
-
         self.set_aantal_nieuwe_concerten()
-
-        self.set_link_naar_city_cleaning()
-        self.set_link_naar_country_cleaning()
-        self.set_link_naar_ignore()
-        self.set_link_naar_latest()
-        self.set_link_naar_musicbrainz_artiesten()
-        self.set_link_naar_diff_nieuwe_musicbrainz_artiesten()
-
         self.generate_report()
         self.send_report()
 
@@ -766,31 +650,31 @@ class Reporter(object):
             "vorige_check": self.datum_vorige_check,
             "steden": {
                 "aantal_ongecleande_steden": self.aantal_ongecleande_steden,
-                "link_city_cleaning": self.link_naar_city_cleaning
+                "link_city_cleaning": self.drive.get_google_drive_link("city_cleaning.xlsx")
             },
             "landen": {
                 "aantal_ongecleande_landen": self.aantal_ongecleande_landen,
-                "link_country_cleaning": self.link_naar_country_cleaning
+                "link_country_cleaning": self.drive.get_google_drive_link("country_cleaning.xlsx")
             },
             "concerten": {
                 "aantal_nieuwe_concerten": self.aantal_nieuwe_concerten,
-                "link_concerten": self.link_naar_latest
+                "link_concerten": self.drive.get_google_drive_link("latest.xlsx")
             },
             "genres": {
                 "aantal_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre": self.aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre,
-                "link_mb_belgen": self.link_naar_musicbrainz_artiesten
+                "link_mb_belgen": self.drive.get_google_drive_link("belgian_mscbrnz_artists_diff.xlsx")
             },
             "musicbrainz": {
-                "totaal_aantal_mb_belgen": self.huidig_aantal_musicbrainz_artiesten,
-                "vorig_aantal_onderzochte_mb_belgen": self.vorig_aantal_musicbrainz_artiesten,
-                "aantal_nieuwe_mb_belgen": self.aantal_nieuwe_musicbrainz_artiesten,
-                "link_mb_belgen_diff": self.link_naar_diff_nieuwe_musicbrainz_artiesten,
-                "link_mb_belgen": self.link_naar_musicbrainz_artiesten
+                "totaal_aantal_mb_belgen": len(self.current_status_musicbrainz.index),
+                "vorig_aantal_onderzochte_mb_belgen": len(self.old_status_musicbrainz.index),
+                "aantal_nieuwe_mb_belgen": len(self.current_status_musicbrainz.index) - len(self.old_status_musicbrainz.index),
+                "link_mb_belgen_diff": self.drive.get_google_drive_link("belgian_mscbrnz_artists_diff.xlsx"),
+                "link_mb_belgen": self.drive.get_google_drive_link("belgian_mscbrnz_artists_diff.xlsx")
             },
             "ignore_list": {
-                "totaal_aantal_genegeerde_mb_belgen": self.aantal_genegeerde_mb_belgen,
-                "vorig_aantal_genegeerd_mb_belgen": self.vorig_aantal_genegeerde_mb_belgen,
-                "link_genegeerd_mb_belgen": self.link_naar_ignore
+                "totaal_aantal_genegeerde_mb_belgen": len(self.current_status_ignore.index),
+                "vorig_aantal_genegeerd_mb_belgen": len(self.old_status_ignore.index),
+                "link_genegeerd_mb_belgen": self.drive.get_google_drive_link("ignore_list.xlsx")
             }
         }
 
@@ -817,24 +701,41 @@ class Grabber(object):
         self.bandsintownleecher = BandsInTownLeecher()
         self.setlistleecher = SetlistFmLeecher()
         self.facebookleecher = FacebookEventLeecher()
+        self.previous = None
         self.current = None
         self.df = None
         self.diff = None
 
     def grab(self):
-        """
-        overview method to run all the grabbing
-        :return:
-        """
+        print("making snapshot")
+        # begin by fixating previous situation
         self.reporter.take_snapshot_of_status("old")
+
+        print("syncing from drive")
+        # setup syncdrive
+        self.syncdrive.set_resource_files_ids()
         self.syncdrive.downstream()
+
+        print("loading mb")
+        # setup musicbrainz connection
+        self.mbab.calculate_concerts_abroad()
+        self.mbab.load_list()
+        self.mbab.make_genre_mapping()
         if self.mbab.update:
             self.mbab.update_list()
-        self.mbab.load_list()
-        self.leech([self.songkickleecher, self.bandsintownleecher, self.setlistleecher, self.facebookleecher])
+
+        # start leaching
+        print("starting the leech process")
+        # self.leech([self.songkickleecher, self.bandsintownleecher, self.setlistleecher, self.facebookleecher])
+        self.leech([self.facebookleecher])
+        print("adding manual concerts")
         self.add_manual_concerts()
+        print("adding podiumfestivalinfo concerts")
         self.add_podiumfestivalinfo_concerts()
+        print("adding data.kunsten.be concerts")
         self.add_datakunstenbe_concerts()
+
+        # start processing data
         self.update_previous_version()
         self.clean_country_names()
         self.clean_city_names()
@@ -842,18 +743,15 @@ class Grabber(object):
         self.make_concerts()
         self.infer_cancellations()
         self.persist_output()
+
+        # finalize leech
         self.reporter.take_snapshot_of_status("current")
-        #TODO scriptje dat een schoon json bestandje output
         self.syncdrive.upstream()
         self.reporter.do()
 
     def leech(self, leechers):
-        """
-        leech all the platforms, and combine the found events in a pandas dataframe
-        :param leechers: a list of PlatformLeechers instances
-        :return:
-        """
         for leecher in leechers:
+            print("commencing leech for", leecher.platform)
             leecher.set_platform_identifiers()
             leecher.set_events_for_identifiers()
         lines = sum([leecher.events for leecher in leechers], [])
@@ -863,64 +761,111 @@ class Grabber(object):
         manual = read_excel("resources/manual.xlsx")
         manual["datum"] = [datum.date() for datum in to_datetime(manual["datum"].values)]
         manual["source"] = ["manual"] * len(manual.index)
-        self.current = manual.append(self.current, ignore_index=True)
+        self.current = self.current.append(manual, ignore_index=True)
 
     def add_podiumfestivalinfo_concerts(self):
         pci = read_excel("resources/podiumfestivalinfo.xlsx")
         pci["datum"] = [datum.date() for datum in to_datetime(pci["datum"].values)]
-        self.current = pci.append(self.current, ignore_index=True)
+        pci["einddatum"] = [datum.date() if datum is not isinstance(datum, float) else None for datum in to_datetime(pci["einddatum"].values)]
+        pci["artiest_mb_id"] = [self._match_artist_name_to_mbid(artiest_mb_naam) for artiest_mb_naam in pci["artiest_mb_naam"].values]
+        self.current = self.current.append(pci, ignore_index=True)
+
+    def _match_artist_name_to_mbid(self, artiest_mb_naam):
+        matches = self.mbab.lijst[self.mbab.lijst["band"] == artiest_mb_naam]["mbid"].values
+        return matches[0] if len(matches) > 0 else None
 
     def add_datakunstenbe_concerts(self):
         dkbc = DataKunstenBeConnector()
         dkbc.get_concerts_abroad()
         self.current = self.current.append(dkbc.concerts, ignore_index=True)
 
-    def update_previous_version(self):
-        # fix weird symbols in columns
-        for column in ["titel", "artiest", "venue", "artiest", "stad", "land"]:
-            self.current[column] = self.current[column].map(
-                lambda x: ''.join([str(c) for c in str(x) if ord(str(c)) > 31 or ord(str(c)) == 9]))
+    @staticmethod
+    def _fix_weird_symbols(x):
+        return ''.join([str(c) for c in str(x) if ord(str(c)) > 31 or ord(str(c)) == 9])
 
-        # add a last_seen_on column to current dataset
+    def _fix_weird_symbols_in_columns(self, columns):
+        for column in columns:
+            self.current[column] = self.current[column].map(lambda x: self._fix_weird_symbols(x))
+
+    def update_previous_version(self):
+        print("update previous version")
+        print("\tfixing weird symbols")
+        self._fix_weird_symbols_in_columns(["titel", "artiest", "venue", "artiest", "stad", "land"])
+
+        print("\tadding a last seen on column")
         self.current["last_seen_on"] = [datetime.now().date()] * len(self.current.index)
 
-        # read in the previously found concerts
-        previous = read_excel("output/latest.xlsx")
+        print("\treading in the previous concerts")
+        self.previous = read_excel("output/latest.xlsx")
 
-        # do some fixes: make sure dates are dates, remove previous concert ids and
-        # the cleaning of the cities and countries
-        previous["datum"] = [datum.date() if datum is not None else None for datum in previous["datum"]]
-        previous.drop("concert_id", 1, inplace=True)
-        previous.drop("stad_clean", 1, inplace=True)
-        previous.drop("land_clean", 1, inplace=True)
+        print("\tfixing dates and enddates, and dropping concert ids, clean cities, clean countries, visibility setting in previous concerts")
+        for column in ["concert_id", "stad_clean", "land_clean", "visible"]:
+            self.previous.drop(column, 1, inplace=True)
 
-        # combine the previous dataset with the current dataset
-        self.df = previous.append(self.current, ignore_index=True)
+        print("\tcombing the two datasets")
+        self.df = self.previous.append(self.current, ignore_index=True)
 
-        # fix the dates of last seen on
+        print("\tfixing the last seen on date")
         self.df["last_seen_on"] = [date.date() if isinstance(date, datetime) else date for date in self.df["last_seen_on"]]
 
-        # remove duplicates on the basis of the event_id, and keep the first, which is the oldest observation
-        # because of this, we keep potential corrections in earlier versions.
-        self.df.drop_duplicates(subset=["event_id"], keep="first", inplace=True)
+        print("\tapplying current updates to previous concerts")
+        # make sure that an update in title, date and enddate is reflected in the first entry
+        for column in ["titel", "datum", "einddatum"]:
+            print("\t\tdoing the {0}").format(column)
+            self._update_field_based_on_new_leech(column)
 
-        # add a genre to each concert based on the artist
-        self.df["maingenre"] = [self.mbab.maingenres[mbid] if mbid in self.mbab.maingenres else "(tbc)"
-                                for mbid in self.df["artiest_mb_id"]]
+        print("\tdropping duplicates")
+        # now drop duplicates, keeping the first to reflect any updates in title or dates
+        self.df.drop_duplicates(subset=["artiest_mb_id", "event_id"], keep="first", inplace=True)
 
-        # update date of previous events that are also seen currently
-        updated_event_ids = previous[previous["event_id"].isin(self.current["event_id"])]["event_id"].values
-        updated_event_ids_index = self.df[self.df["event_id"].isin(updated_event_ids)].index
-        for event_id in updated_event_ids_index:
-            self.df.set_value(event_id, "last_seen_on", datetime.now().date())
+        print("\tadding the genres")
+        self.df["maingenre"] = [self.mbab.maingenres[mbid] if mbid in self.mbab.maingenres else "(tbc)" for mbid in self.df["artiest_mb_id"]]
 
-        # extract the newly added concerts that did not yet appear in the previous version
-        # to give an overview of additions
-        self.diff = self.current[-self.current["event_id"].isin(previous["event_id"])]
+        print("\tapplying last seen on date to today")
+        self._update_last_seen_on_dates_of_previous_events_that_are_still_current()
+
+        print("\tgenerating a diff, and writing it to file")
+        self._generate_diff()
         self.diff.to_excel("output/diff_" + str(datetime.now().date()) + ".xlsx")
 
+    def _update_field_based_on_new_leech(self, field):
+        tmp = self.df[["event_id", field]].drop_duplicates()
+        cntr = tmp["event_id"].value_counts()
+        updates = {}
+        for key in cntr[cntr > 1].index:
+            key_ = self.df[self.df["event_id"] == key]
+            updates[key] = (key_.index[0], key_[field].unique())
+
+        print("\tdoing the update")
+        for update in updates:
+            idx = updates[update][0]
+            update_values = updates[update][1]
+            if len(update_values) > 1:
+                self.df.at[idx, field] = update_values[-1]  # overwrite with latest value
+
+    def _generate_diff(self):
+        cur_not_in_prev = -self.current[["event_id", "artiest_mb_id"]].isin(self.previous[["event_id", "artiest_mb_id"]].to_dict(orient="list"))
+        diff_indices = (cur_not_in_prev["event_id"] | cur_not_in_prev["artiest_mb_id"])
+        self.diff = self.current[diff_indices]
+
+    def _update_last_seen_on_dates_of_previous_events_that_are_still_current(self):
+        prev_also_in_cur = self.previous[["event_id", "artiest_mb_id"]].isin(self.current[["event_id", "artiest_mb_id"]].to_dict(orient="list"))
+        prev_indices = (prev_also_in_cur["event_id"] & prev_also_in_cur["artiest_mb_id"])
+        events_artiesten = (self.previous["event_id"][prev_indices].values, self.previous["artiest_mb_id"][prev_indices].values)
+        for i in range(0, len(events_artiesten)):
+            event_id = events_artiesten[0][i]
+            artiest_mb_id = events_artiesten[1][i]
+            for idx in self.df[(self.df["event_id"] == event_id) & (self.df["artiest_mb_id"] == artiest_mb_id)].index:
+                self.df.at[idx, "last_seen_on"] = datetime.now().date()
+
+    @staticmethod
+    def _convert_cleaned_country_name_to_full_name(twolettercode):
+        try:
+            return countries.get(alpha_2=twolettercode).name
+        except KeyError:
+            return "Unknown"
+
     def clean_country_names(self):
-        # resolve full country names to iso code
         clean_countries = []
         country_cleaning = read_excel("resources/country_cleaning.xlsx")
         country_cleaning_additions = set()
@@ -928,7 +873,7 @@ class Grabber(object):
             land = str(land).strip()
             if len(land) == 2:
                 clean_country = "UK" if land == "GB" else land
-                clean_countries.append(clean_country.upper())
+                clean_countries.append(self._convert_cleaned_country_name_to_full_name(clean_country.upper()))
             else:
                 try:
                     clean_country = countries.get(name=land).alpha_2
@@ -939,12 +884,16 @@ class Grabber(object):
                     else:
                         country_cleaning_additions.add(land)
                         clean_country = None
-                clean_countries.append(clean_country)
+                clean_countries.append(self._convert_cleaned_country_name_to_full_name(clean_country))
         country_cleaning.append(DataFrame([{"original": land, "clean": None} for land in country_cleaning_additions]), ignore_index=True).drop_duplicates().to_excel("resources/country_cleaning.xlsx")
         self.df["land_clean"] = clean_countries
 
     def clean_city_names(self):
-        # resolve dirty city names to clean city names
+        """
+        resolve dirty city names to clean city names
+        :return:
+        """
+
         city_cleaning_additions = set()
         clean_cities = []
         city_cleaning = read_excel("resources/city_cleaning.xlsx")
@@ -958,52 +907,110 @@ class Grabber(object):
         city_cleaning.append(DataFrame([{"original": stad, "clean": None} for stad in city_cleaning_additions]), ignore_index=True).drop_duplicates().to_excel("resources/city_cleaning.xlsx")
         self.df["stad_clean"] = clean_cities
 
+    # TODO clean venue names
+
     def handle_ambiguous_artists(self):
-        # for newly added events, add a merge name, so that the old corrections in merge names remain
         merge_artists_xlsx = read_excel("resources/merge_artists.xlsx")
         merge_artists = {row[1]["original"]: row[1]["clean"] for row in merge_artists_xlsx.iterrows()}
         for event_id in self.diff["event_id"]:
             df_index = self.df[self.df["event_id"] == event_id].index[0]
             artiest_mb_naam = self.df.loc[df_index, "artiest_mb_naam"]
-            self.df.set_value(df_index, "artiest_merge_naam", merge_artists[artiest_mb_naam] if artiest_mb_naam in merge_artists else artiest_mb_naam)
+            self.df.at[df_index, "artiest_merge_naam"] = merge_artists[artiest_mb_naam] if artiest_mb_naam in merge_artists else artiest_mb_naam
 
-    def make_concerts(self):
-        # make a concert_id
-        # TODO songkick festivals hebben begin en eind datum, maar bandsintown geeft specifieke dag van festival
-        print("identifying the concerts")
-        artist_date_city_triples = set([tuple(x) for x in self.df[["artiest_merge_naam", "datum", "stad_clean"]].values])
+    def _make_gig_triples(self):
+        return set([tuple(x) for x in self.df[["artiest_merge_naam", "datum", "stad_clean"]].values])
+
+    def _assign_concert_ids(self, artist_date_city_triples):
         gig_triple_id = 0
         for gig_triple in artist_date_city_triples:
             events = self.df[(self.df["artiest_merge_naam"] == gig_triple[0]) & (self.df["datum"] == gig_triple[1]) & (self.df["stad_clean"] == gig_triple[2])]
             for i in events.index:
-                self.df.set_value(i, "concert_id", gig_triple_id)
+                self.df.at[i, "concert_id"] = gig_triple_id
             gig_triple_id += 1
 
-        # per concert id, mark songkick/bit/setlist/facebook (in that order) as "to show"
+    def _select_visibility_per_concert(self):
         for concert_id in self.df["concert_id"].unique():
             concerts = self.df[self.df["concert_id"] == concert_id]
             concert_source_values = concerts["source"].values
             if "manual" in concert_source_values:
-                self.df.set_value(concerts[concerts["source"] == "manual"].index[0], "visible", True)
+                source = "manual"
             elif "datakunstenbe" in concert_source_values:
-                self.df.set_value(concerts[concerts["source"] == "datakunstenbe"].index[0], "visible", True)
+                source = "datakunstenbe"
             elif "podiumfestivalinfo" in concert_source_values:
-                self.df.set_value(concerts[concerts["source"] == "podiumfestivalinfo"].index[0], "visible", True)
+                source = "podiumfestivalinfo"
             elif "songkick" in concert_source_values:
-                self.df.set_value(concerts[concerts["source"] == "songkick"].index[0], "visible", True)
+                source = "songkick"
             elif "bandsintown" in concert_source_values:
-                self.df.set_value(concerts[concerts["source"] == "bandsintown"].index[0], "visible", True)
+                source = "bandsintown"
             elif "setlist" in concert_source_values:
-                self.df.set_value(concerts[concerts["source"] == "setlist"].index[0], "visible", True)
+                source = "setlist"
             elif "facebook" in concert_source_values:
-                self.df.set_value(concerts[concerts["source"] == "facebook"].index[0], "visible", True)
+                source = "facebook"
             else:
-                pass
+                source = None
 
+            if source:
+                self.df.at[concerts[concerts["source"] == source].index[0], "visible"] = True
+
+    def make_concerts(self):
+        print("identifying the concerts")
+        artist_date_city_triples = self._make_gig_triples()
+
+        print("\tassigning concert ids")
+        self._assign_concert_ids(artist_date_city_triples)
+
+        # per concert id, mark songkick/bit/setlist/facebook (in that order) as "to show"
+        print("\tsetting visibilty")
+        self._select_visibility_per_concert()
+
+        # fill rest of non visible or ignored concerts with False
         self.df["visible"].fillna(False, inplace=True)
         self.df["ignore"].fillna(False, inplace=True)
 
+        # festivals in songkick and podiumfestivalinfo have a daterange, whereas other platforms give precise dates
+        print("\tresolving festival date ranges")
+        self._set_precise_date_for_festivals()
+
+        # concerts from facebook without decent city information should be ignored
         self.df.loc[(self.df["source"] == "facebook") & (self.df["stad"] == "None"), "visible"] = False
+
+    def _set_precise_date_for_festivals(self):
+        visible_festivals = self.df[(self.df["event_type"] == "Festival") &
+                                    (self.df["source"].isin(["songkick", "podiumfestivalinfo"])) &
+                                    (self.df["visible"])]
+
+        for row in visible_festivals.iterrows():
+            festival_index = row[0]
+            begindatum = to_datetime(row[1]["datum"]).date()
+            einddatum = to_datetime(row[1]["einddatum"]).date()
+            artiest_mb_id = row[1]["artiest_mb_id"]
+            stad_clean = row[1]["stad_clean"]
+            precise_events = self.df[
+                (self.df["source"].isin(["bandsintown", "facebook", "datakunstenbe", "manual", "setlist"])) &
+                (self.df["datum"].between(begindatum, einddatum)) &
+                (self.df["artiest_mb_id"] == artiest_mb_id) &
+                (self.df["stad_clean"] == stad_clean)]
+            precise_events_source_values = precise_events["source"].values
+            if "manual" in precise_events_source_values:
+                source = "manual"
+            elif "datakunstenbe" in precise_events_source_values:
+                source = "datakunstenbe"
+            elif "bandsintown" in precise_events_source_values:
+                source = "bandsintown"
+            elif "setlist" in precise_events_source_values:
+                source = "setlist"
+            elif "facebook" in precise_events_source_values:
+                source = "facebook"
+            else:
+                source = None
+
+            if source:
+                precise_concert_index = precise_events[precise_events["source"] == source].index[0]
+                self.df.at[precise_concert_index, "visible"] = True
+
+                precise_concert_id = self.df.loc[precise_concert_index]["concert_id"]
+                self.df.at[festival_index, "concert_id"] = precise_concert_id
+                self.df.at[festival_index, "visible"] = False
 
     def infer_cancellations(self):
         print("inferring cancellations")

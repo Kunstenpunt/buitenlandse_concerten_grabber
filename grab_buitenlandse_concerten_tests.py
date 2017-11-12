@@ -1,6 +1,6 @@
 import unittest
 from grab_buitenlandse_concerten import Grabber
-from pandas import DataFrame, isnull
+from pandas import DataFrame, isnull, Timestamp, read_excel
 from datetime import datetime, timedelta
 
 
@@ -46,13 +46,17 @@ class TestGrabber(unittest.TestCase):
         self.grabber.infer_cancellations()
         self.assertTrue(self.grabber.df[self.grabber.df["event_id"] == "sk1"]["cancelled"].bool())
 
+    def test_clean_names(self):
+        # TODO
+        pass
+
     def test_prefer_precise_date_for_festival(self):
         self.grabber.df = DataFrame([
             {
                 "event_id": "sk1",
                 "event_type": "Festival",
-                "datum": datetime.now() - timedelta(days=2),
-                "einddatum": datetime.now() + timedelta(days=3),
+                "datum": Timestamp(datetime.now().date() - timedelta(days=2)),
+                "einddatum": Timestamp(datetime.now().date() + timedelta(days=3)),
                 "source": "songkick",
                 "artiest_mb_id": "a",
                 "stad_clean": "b",
@@ -61,7 +65,7 @@ class TestGrabber(unittest.TestCase):
             },
             {
                 "event_id": "bit1",
-                "datum": datetime.now(),
+                "datum": Timestamp(datetime.now().date()),
                 "source": "bandsintown",
                 "artiest_mb_id": "a",
                 "stad_clean": "b",
@@ -70,7 +74,16 @@ class TestGrabber(unittest.TestCase):
             },
             {
                 "event_id": "setlist1",
-                "datum": datetime.now(),
+                "datum": Timestamp(datetime.now().date()),
+                "source": "setlist",
+                "artiest_mb_id": "a",
+                "stad_clean": "b",
+                "visible": False,
+                "concert_id": 2
+            },
+            {
+                "event_id": "setlist1",
+                "datum": None,
                 "source": "setlist",
                 "artiest_mb_id": "a",
                 "stad_clean": "b",
@@ -182,6 +195,12 @@ class TestGrabber(unittest.TestCase):
                 "last_seen_on": datetime.now().date()
             },
             {
+                "event_id": "sk3",
+                "titel": "test3",
+                "artiest_mb_id": "b",
+                "last_seen_on": datetime.now().date()
+            },
+            {
                 "event_id": "sk4",
                 "titel": "test4",
                 "artiest_mb_id": "a",
@@ -191,7 +210,7 @@ class TestGrabber(unittest.TestCase):
         self.grabber.df = self.grabber.previous.append(self.grabber.current, ignore_index=True)
         self.grabber.df.drop_duplicates(subset=["artiest_mb_id", "event_id"], keep="first", inplace=True)
         self.grabber._generate_diff()
-        self.assertEqual(self.grabber.diff.index, [2])
+        self.assertEqual(self.grabber.diff.index.tolist(), [2, 3])
 
     def test_match_artiest_naam_to_mbid(self):
         self.grabber.mbab.load_list()

@@ -577,7 +577,7 @@ class DriveSyncer(object):
 
 
 class Reporter(object):
-    def __init__(self, drive):
+    def __init__(self, grabber, drive):
         with open("output/report.json", "r", "utf-8") as f:
             self.previous_report = load(f)
 
@@ -596,7 +596,8 @@ class Reporter(object):
         self.aantal_ongecleande_landen = None
         self.report = None
         self.datum_vorige_check = None
-        self.datum_recentste_check = datetime.now()
+        self.datum_recentste_check = grabber.now
+        self.grabber = grabber
 
     def set_aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre(self):
         has_concerts = self.current_status_musicbrainz["number_of_concerts"] > 0
@@ -605,8 +606,7 @@ class Reporter(object):
         self.aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre = aantal
 
     def set_aantal_nieuwe_concerten(self):
-        diff = read_excel("output/diff_" + datetime.now().date().isoformat() + ".xlsx")
-        self.aantal_nieuwe_concerten = len(diff.index)
+        self.aantal_nieuwe_concerten = len(self.grabber.diff.index)
 
     def take_snapshot_of_status(self, timing):
         if timing == "old":
@@ -699,7 +699,7 @@ class Reporter(object):
 class Grabber(object):
     def __init__(self, update_from_musicbrainz=True):
         self.syncdrive = DriveSyncer()
-        self.reporter = Reporter(self.syncdrive)
+        self.reporter = Reporter(self, self.syncdrive)
         self.mbab = MusicBrainzArtistsBelgium(update=update_from_musicbrainz)
         self.songkickleecher = SongkickLeecher()
         self.bandsintownleecher = BandsInTownLeecher()
@@ -709,46 +709,41 @@ class Grabber(object):
         self.current = None
         self.df = None
         self.diff = None
+        self.now = datetime.now()
 
     def grab(self):
         print("making snapshot")
-        # begin by fixating previous situation
         self.reporter.take_snapshot_of_status("old")
 
         print("syncing from drive")
-        # setup syncdrive
         self.syncdrive.set_resource_files_ids()
         self.syncdrive.downstream()
 
         print("loading mb")
-        # setup musicbrainz connection
         self.mbab.calculate_concerts_abroad()
         self.mbab.load_list()
         self.mbab.make_genre_mapping()
         if self.mbab.update:
             self.mbab.update_list()
 
-        # start leaching
         print("starting the leech process")
         self.leech([self.songkickleecher, self.bandsintownleecher, self.setlistleecher, self.facebookleecher])
         print("adding manual concerts")
         self.add_manual_concerts()
         # print("adding podiumfestivalinfo concerts")
         # self.add_podiumfestivalinfo_concerts()
+
         print("adding data.kunsten.be concerts")
         self.add_datakunstenbe_concerts()
 
-        # start processing data
         self.update_previous_version()
         self.clean_country_names()
-        self.clean_city_names()
-        self.clean_venue_names()
+        self._clean_names("stad", "stad_clean", "resources/city_cleaning.xlsx")
+        self._clean_names("venue", "venue_clean", "resources/venue_cleaning.xlsx")
         self.handle_ambiguous_artists()
         self.make_concerts()
         self.infer_cancellations()
         self.persist_output()
-
-        # finalize leech
         self.reporter.take_snapshot_of_status("current")
         self.syncdrive.upstream()
         self.reporter.do()
@@ -797,7 +792,7 @@ class Grabber(object):
         self._fix_weird_symbols_in_columns(["titel", "artiest", "venue", "artiest", "stad", "land"])
 
         print("\tadding a last seen on column")
-        self.current["last_seen_on"] = [datetime.now().date()] * len(self.current.index)
+        self.current["last_seen_on"] = [self.now.date()] * len(self.current.index)
 
         print("\treading in the previous concerts")
         self.previous = read_excel("output/latest.xlsx")
@@ -819,8 +814,7 @@ class Grabber(object):
             self._update_field_based_on_new_leech(column)
 
         print("\tdropping duplicates")
-        # now drop duplicates, keeping the first to reflect any updates in title or dates
-        self.df.drop_duplicates(subset=["artiest_mb_id", "event_id"], keep="first", inplace=True)
+        self.df.drop_duplicates(subset=["artiest_mb_id", "event_id"], keep="first", inplace=True)  # keep first to reflect any updates
 
         print("\tadding the genres")
         self.df["maingenre"] = [self.mbab.genres[mbid] if mbid in self.mbab.genres else "(tbc)" for mbid in self.df["artiest_mb_id"]]
@@ -830,7 +824,7 @@ class Grabber(object):
 
         print("\tgenerating a diff, and writing it to file")
         self._generate_diff()
-        self.diff.to_excel("output/diff_" + str(datetime.now().date()) + ".xlsx")
+        self.diff.to_excel("output/diff_" + str(self.now.date()) + ".xlsx")
 
     def _update_field_based_on_new_leech(self, field):
         tmp = self.df[["event_id", field]].drop_duplicates()
@@ -858,7 +852,7 @@ class Grabber(object):
             event_id = events_artiesten[0][i]
             artiest_mb_id = events_artiesten[1][i]
             for idx in self.df[(self.df["event_id"] == event_id) & (self.df["artiest_mb_id"] == artiest_mb_id)].index:
-                self.df.at[idx, "last_seen_on"] = datetime.now().date()
+                self.df.at[idx, "last_seen_on"] = self.now.date()
 
     @staticmethod
     def _convert_cleaned_country_name_to_full_name(twolettercode):
@@ -905,12 +899,6 @@ class Grabber(object):
         item_cleaning.append(DataFrame([{"original": item, "clean": None} for item in item_cleaning_additions]), ignore_index=True).drop_duplicates().to_excel(resource)
         self.df[column_clean] = clean_items
 
-    def clean_city_names(self):
-        self._clean_names("stad", "stad_clean", "resources/city_cleaning.xlsx")
-
-    def clean_venue_names(self):
-        self._clean_names("venue", "venue_clean", "resources/venue_cleaning.xlsx")
-
     def handle_ambiguous_artists(self):
         merge_artists_xlsx = read_excel("resources/merge_artists.xlsx")
         merge_artists = {row[1]["original"]: row[1]["clean"] for row in merge_artists_xlsx.iterrows()}
@@ -942,9 +930,8 @@ class Grabber(object):
             source = self._establish_optimal_source(concert_source_values, psv)
             if source:
                 self.df.at[concerts[concerts["source"] == source].index[0], "visible"] = True
-        # fill rest of non visible or ignored concerts with False
-        self.df["visible"].fillna(False, inplace=True)
-        self.df["ignore"].fillna(False, inplace=True)
+        self.df["visible"].fillna(False, inplace=True)  # fill rest of non visible concerts with False
+        self.df["ignore"].fillna(False, inplace=True)  # fill rest of ignored concerts with False
 
     @staticmethod
     def _establish_optimal_source(concert_source_values, potential_source_values):
@@ -964,16 +951,13 @@ class Grabber(object):
         print("\tassigning concert ids")
         self._assign_concert_ids(artist_date_city_triples)
 
-        # per concert id, mark songkick/bit/setlist/facebook (in that order) as "to show"
         print("\tsetting visibility")
         self._select_visibility_per_concert()
 
-        # festivals in songkick and podiumfestivalinfo have a daterange, whereas other platforms give precise dates
         print("\tresolving festival date ranges")
         self._set_precise_date_for_festivals()
 
-        # concerts from facebook without decent city information should be ignored
-        self.df.loc[(self.df["source"] == "facebook") & (self.df["stad"] == "None"), "visible"] = False
+        self.df.loc[(self.df["source"] == "facebook") & (self.df["stad"] == "None"), "visible"] = False  # concerts from facebook without decent city information should be ignored
 
     def _set_precise_date_for_festivals(self):
         visible_festivals = self.df[(self.df["event_type"].str.lower() == "festival") &
@@ -1002,8 +986,8 @@ class Grabber(object):
 
     def infer_cancellations(self):
         print("inferring cancellations")
-        self.df["cancelled"] = (self.df["datum"] > datetime.now().date()) & \
-                               (self.df["last_seen_on"] < (datetime.now().date() - timedelta(days=5)))
+        self.df["cancelled"] = (self.df["datum"] > self.now.date()) & \
+                               (self.df["last_seen_on"] < self.now.date() - timedelta(days=5))
 
     def persist_output(self):
         print("writing to file")

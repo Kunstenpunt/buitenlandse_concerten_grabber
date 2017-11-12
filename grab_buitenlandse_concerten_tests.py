@@ -1,6 +1,6 @@
 import unittest
 from grab_buitenlandse_concerten import Grabber
-from pandas import DataFrame, isnull, Timestamp, read_excel
+from pandas import DataFrame, isnull, Timestamp
 from datetime import datetime, timedelta
 
 
@@ -47,8 +47,13 @@ class TestGrabber(unittest.TestCase):
         self.assertTrue(self.grabber.df[self.grabber.df["event_id"] == "sk1"]["cancelled"].bool())
 
     def test_clean_names(self):
-        # TODO
-        pass
+        self.grabber.df = DataFrame([
+            {
+                "venue": "AB"
+            }
+        ])
+        self.grabber._clean_names("venue", "venue_clean", "resources/venue_cleaning.xlsx")
+        self.assertEqual(self.grabber.df.iloc[0]["venue_clean"], "Ancienne Belgique")
 
     def test_prefer_precise_date_for_festival(self):
         self.grabber.df = DataFrame([
@@ -234,7 +239,7 @@ class TestGrabber(unittest.TestCase):
         ])
 
         gig_triples = self.grabber._make_gig_triples()
-        self.assertEqual(gig_triples, set([('a', datetime.now().date(), 'b')]))
+        self.assertEqual(gig_triples, {('a', datetime.now().date(), 'b')})
 
     def test_assign_concert_ids(self):
         self.grabber.df = DataFrame([
@@ -251,7 +256,7 @@ class TestGrabber(unittest.TestCase):
                 "stad_clean": "b"
             }
         ])
-        gig_triples = set([('a', datetime.now().date(), 'b')])
+        gig_triples = {('a', datetime.now().date(), 'b')}
         self.grabber._assign_concert_ids(gig_triples)
         self.assertListEqual(self.grabber.df["concert_id"].tolist(), [0, 0])
 

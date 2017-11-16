@@ -901,10 +901,9 @@ class Grabber(object):
     def handle_ambiguous_artists(self):
         merge_artists_xlsx = read_excel("resources/merge_artists.xlsx")
         merge_artists = {row[1]["original"]: row[1]["clean"] for row in merge_artists_xlsx.iterrows()}
-        for idx in self.df.index:
+        for idx in self.df[isnull(self.df["artiest_merge_naam"])].index:
             naam = self.df.loc[idx, "artiest_mb_naam"]
-            if isnull(naam):
-                self.df.at[idx, "artiest_merge_naam"] = merge_artists[naam] if naam in merge_artists else naam
+            self.df.at[idx, "artiest_merge_naam"] = merge_artists[naam] if naam in merge_artists else naam
 
     def _make_gig_triples(self):
         return set([tuple(x) for x in self.df[["artiest_merge_naam", "datum", "stad_clean"]].values])

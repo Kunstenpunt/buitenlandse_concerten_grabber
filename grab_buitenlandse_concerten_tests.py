@@ -286,6 +286,15 @@ class TestGrabber(unittest.TestCase):
     def test_fix_weird_symbols(self):
         self.assertIsInstance(self.grabber._fix_weird_symbols("ü@sdf£µù)°ñ"), str)
 
+    def test_handle_ambiguous_names(self):
+        self.grabber.df = DataFrame([
+            {
+                "artiest_merge_naam": None,
+                "artiest_mb_naam": "Guy Verlinde"
+            }
+        ])
+        self.grabber.handle_ambiguous_artists()
+        self.assertIsNotNone(self.grabber.df.loc[0, "artiest_merge_naam"])
 
 if __name__ == '__main__':
     unittest.main()

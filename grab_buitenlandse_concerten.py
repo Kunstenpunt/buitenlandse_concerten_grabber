@@ -577,7 +577,7 @@ class DriveSyncer(object):
 
 
 class Reporter(object):
-    def __init__(self, grabber, drive):
+    def __init__(self, now, drive):
         with open("output/report.json", "r", "utf-8") as f:
             self.previous_report = load(f)
 
@@ -596,8 +596,7 @@ class Reporter(object):
         self.aantal_ongecleande_landen = None
         self.report = None
         self.datum_vorige_check = None
-        self.datum_recentste_check = grabber.now
-        self.grabber = grabber
+        self.datum_recentste_check = now
 
     def set_aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre(self):
         has_concerts = self.current_status_musicbrainz["number_of_concerts"] > 0
@@ -606,7 +605,7 @@ class Reporter(object):
         self.aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre = aantal
 
     def set_aantal_nieuwe_concerten(self):
-        self.aantal_nieuwe_concerten = len(self.grabber.diff.index)
+        self.aantal_nieuwe_concerten = len(read_excel("output/diff" + str(self.datum_recentste_check.date()) + ".xlsx").index)
 
     def take_snapshot_of_status(self, timing):
         if timing == "old":
@@ -699,7 +698,8 @@ class Reporter(object):
 class Grabber(object):
     def __init__(self, update_from_musicbrainz=True):
         self.syncdrive = DriveSyncer()
-        self.reporter = Reporter(self, self.syncdrive)
+        self.now = datetime.now()
+        self.reporter = Reporter(self.now, self.syncdrive)
         self.mbab = MusicBrainzArtistsBelgium(update=update_from_musicbrainz)
         self.songkickleecher = SongkickLeecher()
         self.bandsintownleecher = BandsInTownLeecher()
@@ -709,7 +709,6 @@ class Grabber(object):
         self.current = None
         self.df = None
         self.diff = None
-        self.now = datetime.now()
 
     def grab(self):
         print("making snapshot")

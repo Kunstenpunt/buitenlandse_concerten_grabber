@@ -230,7 +230,10 @@ class SetlistFmLeecher(PlatformLeecher):
         while retrieved_hits < total_hits:
             headers = {"x-api-key": self.platform_access_granter, "Accept": "application/json"}
             r = get("https://api.setlist.fm/rest/1.0/artist/{1}/setlists?p={0}".format(p, mbid), headers=headers)
-            response = loads(r.text)
+            try:
+                response = loads(r.text)
+            except decoder.JSONDecodeError:
+                response = {}
             if "setlist" in response:
                 for concert in response["setlist"]:
                     self.events.append(self.map_platform_to_schema(concert, band, mbid, {}))

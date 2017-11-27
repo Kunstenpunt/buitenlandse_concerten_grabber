@@ -1,5 +1,6 @@
 from pandas import read_excel, DataFrame, to_datetime, isnull, Timestamp
 from os import remove
+import sys
 from re import sub
 from musicbrainzngs import set_useragent, search_artists, get_area_by_id, musicbrainz, get_artist_by_id
 from codecs import open
@@ -72,7 +73,10 @@ class SongkickLeecher(PlatformLeecher):
         page = 1
         url = base_url.format(artistid, self.platform_access_granter, page)
         html = get(url).text
-        json_response = loads(html) if html is not None else {}
+        try:
+            json_response = loads(html) if html is not None else {}
+        except decoder.JSONDecodeError:
+            json_response = {}
         if "resultsPage" in json_response:
             resultspaga = json_response["resultsPage"]
             amount_events = resultspaga["totalEntries"] if "totalEntries" in resultspaga else 0
@@ -183,9 +187,8 @@ class FacebookEventLeecher(PlatformLeecher):
                 for concert in events["data"]:
                     self.events.append(self.map_platform_to_schema(concert, band, mbid, {"page_label": page_label}))
         except facebook.GraphAPIError as e:
-            if "#803" not in str(e):
-                with open("resources/facebook_errors.txt", "a") as f:
-                    f.write(datetime.now().date().isoformat() + "\t" + url + "\t" + str(e) + "\n")
+            with open("resources/facebook_errors.txt", "a") as f:
+                f.write(datetime.now().date().isoformat() + "\t" + url + "\t" + str(e) + "\n")
         except exceptions.ConnectionError:
             self.set_events_for_identifier(band, mbid, url)
 
@@ -193,9 +196,12 @@ class FacebookEventLeecher(PlatformLeecher):
         venue = concert["place"]["name"] if "place" in concert else None
         stad = concert["place"]["location"]["city"] if "place" in concert and "location" in concert["place"] and "city" in concert["place"]["location"] else None
         land = concert["place"]["location"]["country"] if "place" in concert and "location" in concert["place"] and "country" in concert["place"]["location"] else None
+        einddatum = Timestamp(dateparse(concert["end_time"]).date()) if "end_time" in concert else None
         return {
             "titel": concert["name"] if "name" in concert else band + " @ " + venue + " in " + stad + ", " + land,
             "datum": Timestamp(dateparse(concert["start_time"]).date()),
+            "einddatum": einddatum,
+            "event_type": "festival" if einddatum else None,
             "artiest": band,
             "artiest_id": "facebook_" + other["page_label"],
             "artiest_mb_naam": band,
@@ -262,7 +268,7 @@ class MusicBrainzArtistsBelgium(object):
 
     def calculate_concerts_abroad(self):
         concerts = read_excel("output/latest.xlsx")
-        concerts_abroad_future = concerts[(-concerts["land_clean"].isin(["BE", None, "Unknown", ""])) & (concerts["datum"] > datetime.now())]
+        concerts_abroad_future = concerts[(-concerts["land_clean"].isin(["Belgium", None, "Unknown", ""])) & (concerts["datum"] > datetime.now())]
         self.aantal_concerten_per_mbid = concerts_abroad_future.groupby(["artiest_mb_id"])["event_id"].count()
 
     def make_genre_mapping(self):
@@ -605,7 +611,7 @@ class Reporter(object):
         self.aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre = aantal
 
     def set_aantal_nieuwe_concerten(self):
-        self.aantal_nieuwe_concerten = len(read_excel("output/diff" + str(self.datum_recentste_check.date()) + ".xlsx").index)
+        self.aantal_nieuwe_concerten = len(read_excel("output/diff_" + str(self.datum_recentste_check.date()) + ".xlsx").index)
 
     def take_snapshot_of_status(self, timing):
         if timing == "old":
@@ -729,8 +735,8 @@ class Grabber(object):
         self.leech([self.songkickleecher, self.bandsintownleecher, self.setlistleecher, self.facebookleecher])
         print("adding manual concerts")
         self.add_manual_concerts()
-        # print("adding podiumfestivalinfo concerts")
-        # self.add_podiumfestivalinfo_concerts()
+        print("adding podiumfestivalinfo concerts")
+        self.add_podiumfestivalinfo_concerts()
 
         print("adding data.kunsten.be concerts")
         self.add_datakunstenbe_concerts()
@@ -847,7 +853,7 @@ class Grabber(object):
         prev_also_in_cur = self.previous[["event_id", "artiest_mb_id"]].isin(self.current[["event_id", "artiest_mb_id"]].to_dict(orient="list"))
         prev_indices = (prev_also_in_cur["event_id"] & prev_also_in_cur["artiest_mb_id"])
         events_artiesten = (self.previous["event_id"][prev_indices].values, self.previous["artiest_mb_id"][prev_indices].values)
-        for i in range(0, len(events_artiesten)):
+        for i in range(0, len(events_artiesten[0])):
             event_id = events_artiesten[0][i]
             artiest_mb_id = events_artiesten[1][i]
             for idx in self.df[(self.df["event_id"] == event_id) & (self.df["artiest_mb_id"] == artiest_mb_id)].index:
@@ -867,8 +873,7 @@ class Grabber(object):
         for land in self.df["land"]:
             land = str(land).strip()
             if len(land) == 2:
-                clean_country = "UK" if land == "GB" else land
-                clean_countries.append(self._convert_cleaned_country_name_to_full_name(clean_country.upper()))
+                clean_countries.append(self._convert_cleaned_country_name_to_full_name(land.upper()))
             else:
                 try:
                     clean_country = countries.get(name=land).alpha_2
@@ -921,25 +926,30 @@ class Grabber(object):
             gig_triple_id += 1
 
     def _select_visibility_per_concert(self):
+        self.df["visible"] = [False] * len(self.df.index)
         for concert_id in self.df["concert_id"].unique():
             concerts = self.df[self.df["concert_id"] == concert_id]
+            concert_cancellations = concerts.apply(self._is_cancellation, axis=1)
             concert_source_values = concerts["source"].values
-            psv = ["manual", "datakunstenbe", "podiumfestivalinfo", "songkick", "bandsintow", "setlist", "facebook"]
-            source = self._establish_optimal_source(concert_source_values, psv)
+            psv = ["manual", "datakunstenbe", "podiumfestivalinfo", "songkick", "bandsintown", "setlist", "facebook"]
+            source = self._establish_optimal_source(concert_source_values, concert_cancellations, psv)
             if source:
                 self.df.at[concerts[concerts["source"] == source].index[0], "visible"] = True
-        self.df["visible"].fillna(False, inplace=True)  # fill rest of non visible concerts with False
         self.df["ignore"].fillna(False, inplace=True)  # fill rest of ignored concerts with False
 
     @staticmethod
-    def _establish_optimal_source(concert_source_values, potential_source_values):
+    def _establish_optimal_source(concert_source_values, concert_cancellations, potential_source_values):
         source = None
         concert_source_value_established = False
         for potential_source_value in potential_source_values:
             if not concert_source_value_established:
                 source = potential_source_value if potential_source_value in concert_source_values else None
                 if source:
-                    concert_source_value_established = True
+                    cancelled = concert_cancellations.iloc[concert_source_values.tolist().index(source)]
+                    if not cancelled:
+                        concert_source_value_established = True
+                    else:
+                        source = None
         return source
 
     def make_concerts(self):
@@ -959,7 +969,7 @@ class Grabber(object):
 
     def _set_precise_date_for_festivals(self):
         visible_festivals = self.df[(self.df["event_type"].str.lower() == "festival") &
-                                    (self.df["source"].isin(["songkick", "podiumfestivalinfo"])) &
+                                    (self.df["source"].isin(["songkick", "podiumfestivalinfo", "facebook"])) &
                                     (self.df["visible"])]
         for row in visible_festivals.iterrows():
             festival_index = row[0]
@@ -968,13 +978,15 @@ class Grabber(object):
             artiest_mb_id = row[1]["artiest_mb_id"]
             stad_clean = row[1]["stad_clean"]
             precise_events = self.df[
-                (self.df["source"].isin(["bandsintown", "facebook", "datakunstenbe", "manual", "setlist"])) &
+                (self.df["source"].isin(["bandsintown", "facebook", "datakunstenbe", "manual", "setlist", "songkick"])) &
                 (self.df["datum"].between(begindatum, einddatum)) &
+                (self.df["event_type"] != "festival") &
                 (self.df["artiest_mb_id"] == artiest_mb_id) &
                 (self.df["stad_clean"] == stad_clean)]
             precise_events_source_values = precise_events["source"].values
-            potential_source_values = ["manual", "datakunstenbe", "bandsintown", "setlist", "facebook"]
-            source = self._establish_optimal_source(precise_events_source_values, potential_source_values)
+            concert_cancellations = precise_events.apply(self._is_cancellation, axis=1)
+            potential_source_values = ["manual", "datakunstenbe", "songkick", "bandsintown", "setlist", "facebook"]
+            source = self._establish_optimal_source(precise_events_source_values, concert_cancellations, potential_source_values)
             if source:
                 precise_concert_index = precise_events[precise_events["source"] == source].index[0]
                 self.df.at[precise_concert_index, "visible"] = True
@@ -982,16 +994,21 @@ class Grabber(object):
                 self.df.at[festival_index, "concert_id"] = precise_concert_id
                 self.df.at[festival_index, "visible"] = False
 
+    def _is_cancellation(self, row):
+        return (Timestamp(row["datum"]) > Timestamp(self.now.date())) & (Timestamp(row["last_seen_on"]) < Timestamp(self.now.date() - timedelta(days=5)))
+
     def infer_cancellations(self):
         print("inferring cancellations")
-        self.df["cancelled"] = (self.df["datum"] > self.now.date()) & \
-                               (self.df["last_seen_on"] < self.now.date() - timedelta(days=5))
+        self.df["cancelled"] = self.df.apply(self._is_cancellation, axis=1)
 
     def persist_output(self):
         print("writing to file")
-        self.df.to_excel("output/latest.xlsx")
+        with open("resources/kolomvolgorde.txt", "r") as f:
+            kolomvolgorde = [kolom.strip() for kolom in f.read().split("\n")]
+        self.df.to_excel("output/latest.xlsx", columns=kolomvolgorde)
 
 
 if __name__ == "__main__":
-    grabber = Grabber(update_from_musicbrainz=False)
+    update_from_musicbrainz = (sys.argv[1] == "True") if len(sys.argv) > 1 else False
+    grabber = Grabber(update_from_musicbrainz)
     grabber.grab()

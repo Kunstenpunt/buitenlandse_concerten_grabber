@@ -1,6 +1,6 @@
 import unittest
 from grab_buitenlandse_concerten import Grabber
-from pandas import DataFrame, isnull, Timestamp
+from pandas import DataFrame, isnull, Timestamp, Series, read_excel
 from datetime import datetime, timedelta
 
 
@@ -33,7 +33,14 @@ class TestGrabber(unittest.TestCase):
 
     def test_convert_iso_code_to_full_name(self):
         self.assertEqual(self.grabber._convert_cleaned_country_name_to_full_name("DE"), "Germany")
+        self.assertEqual(self.grabber._convert_cleaned_country_name_to_full_name("GB"), "United Kingdom")
         self.assertEqual(self.grabber._convert_cleaned_country_name_to_full_name("VV"), "Unknown")
+
+    def test_add_podiumfestivalinfo(self):
+        self.grabber.current = DataFrame([{}])
+        self.grabber.mbab.load_list()
+        self.grabber.add_podiumfestivalinfo_concerts()
+        self.assertTrue(self.grabber.current[(self.grabber.current["artiest_mb_naam"] == "Balthazar") & (self.grabber.current["datum"] < datetime(2005, 1, 1))].empty)
 
     def test_infer_cancellations(self):
         self.grabber.df = DataFrame([
@@ -62,6 +69,7 @@ class TestGrabber(unittest.TestCase):
                 "event_type": "Festival",
                 "datum": Timestamp(datetime.now().date() - timedelta(days=2)),
                 "einddatum": Timestamp(datetime.now().date() + timedelta(days=3)),
+                "last_seen_on": datetime.now().date(),
                 "source": "songkick",
                 "artiest_mb_id": "a",
                 "stad_clean": "b",
@@ -71,6 +79,7 @@ class TestGrabber(unittest.TestCase):
             {
                 "event_id": "bit1",
                 "datum": Timestamp(datetime.now().date()),
+                "last_seen_on": datetime.now().date(),
                 "source": "bandsintown",
                 "artiest_mb_id": "a",
                 "stad_clean": "b",
@@ -80,6 +89,7 @@ class TestGrabber(unittest.TestCase):
             {
                 "event_id": "setlist1",
                 "datum": Timestamp(datetime.now().date()),
+                "last_seen_on": datetime.now().date(),
                 "source": "setlist",
                 "artiest_mb_id": "a",
                 "stad_clean": "b",
@@ -90,6 +100,7 @@ class TestGrabber(unittest.TestCase):
                 "event_id": "setlist1",
                 "datum": None,
                 "source": "setlist",
+                "last_seen_on": datetime.now().date(),
                 "artiest_mb_id": "a",
                 "stad_clean": "b",
                 "visible": False,
@@ -100,6 +111,9 @@ class TestGrabber(unittest.TestCase):
         self.assertEqual(self.grabber.df.loc[0]["visible"], False)
         self.assertEqual(self.grabber.df.loc[0]["concert_id"], 2)
         self.assertEqual(self.grabber.df.loc[1]["visible"], True)
+
+        self.grabber.df = read_excel("output/latest.xlsx")
+        self.grabber._set_precise_date_for_festivals()
 
     def test_update_field_based_on_new_leech(self):
         self.grabber.df = DataFrame([
@@ -261,27 +275,51 @@ class TestGrabber(unittest.TestCase):
         self.assertListEqual(self.grabber.df["concert_id"].tolist(), [0, 0])
 
     def test_select_visibility(self):
+        self.grabber.now = datetime.now()
         self.grabber.df = DataFrame([
             {
                 "event_id": "bit1",
                 "source": "bandsintown",
-                "datum": datetime.now().date(),
+                "datum": datetime.now().date() + timedelta(days=2),
+                "last_seen_on": datetime.now().date() - timedelta(days=1),
                 "artiest_merge_naam": "a",
                 "stad_clean": "b",
-                "concert_id": 0
+                "concert_id": 0,
+                "ignore": False
             },
             {
                 "event_id": "sk1",
                 "source": "songkick",
-                "datum": datetime.now().date(),
+                "datum": datetime.now().date() + timedelta(days=2),
+                "last_seen_on": datetime.now().date() - timedelta(days=7),
                 "artiest_merge_naam": "a",
                 "stad_clean": "b",
-                "concert_id": 0
+                "concert_id": 0,
+                "ignore": False
             }
         ])
         self.grabber._select_visibility_per_concert()
-        self.assertTrue(self.grabber.df.iloc[1]["visible"])
-        self.assertTrue(isnull(self.grabber.df.iloc[0]["visible"]))
+        self.assertTrue(self.grabber.df.iloc[0]["visible"])
+        self.assertFalse(self.grabber.df.iloc[1]["visible"])
+
+        self.grabber.now = datetime.now()
+        self.grabber.df = DataFrame([
+            {
+                "event_id": "bit1",
+                "source": "bandsintown",
+                "datum": datetime.now().date() + timedelta(days=2),
+                "last_seen_on": datetime.now().date() - timedelta(days=1),
+                "artiest_merge_naam": "a",
+                "stad_clean": "b",
+                "concert_id": 0,
+                "ignore": False
+            }
+        ])
+        self.grabber._select_visibility_per_concert()
+        self.assertTrue(self.grabber.df.iloc[0]["visible"])
+
+        self.grabber.df = read_excel("output/latest.xlsx")
+        self.grabber._select_visibility_per_concert()
 
     def test_fix_weird_symbols(self):
         self.assertIsInstance(self.grabber._fix_weird_symbols("ü@sdf£µù)°ñ"), str)
@@ -295,6 +333,22 @@ class TestGrabber(unittest.TestCase):
         ])
         self.grabber.handle_ambiguous_artists()
         self.assertIsNotNone(self.grabber.df.loc[0, "artiest_merge_naam"])
+
+    def test_infer_cancellations(self):
+        self.grabber.df = DataFrame([
+            {
+                "datum": Timestamp(datetime.now().date() + timedelta(days=1)),
+                "last_seen_on": Timestamp(datetime.now().date() - timedelta(days=6))
+            },
+            {
+                "datum": Timestamp(datetime.now().date() + timedelta(days=1)),
+                "last_seen_on": Timestamp(datetime.now().date() - timedelta(days=2))
+            }
+        ])
+        row = self.grabber.df.iloc[0]
+        self.assertTrue(self.grabber._is_cancellation(row))
+        self.grabber.infer_cancellations()
+        self.assertListEqual(self.grabber.df["cancelled"].tolist(), [True, False])
 
 if __name__ == '__main__':
     unittest.main()

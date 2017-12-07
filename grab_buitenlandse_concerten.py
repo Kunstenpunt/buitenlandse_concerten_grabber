@@ -145,10 +145,14 @@ class BandsInTownLeecher(PlatformLeecher):
             self.events.append(self.map_platform_to_schema(concert, band, mbid, {}))
 
     def map_platform_to_schema(self, concert, band, mbid, other):
+        region = concert["venue"]["region"].strip() if "region" in concert["venue"] else None
+        stad = (concert["venue"]["city"]).strip()
+        if region is not None:
+            stad = stad + ", " + region
         return {
             "datum": Timestamp(dateparse(concert["datetime"]).date()),
             "land": (concert["venue"]["country"]).strip(),
-            "stad": (concert["venue"]["city"]).strip(),
+            "stad": stad,
             "venue": (concert["venue"]["place"]).strip(),
             "titel": (concert["title"]).strip(),
             "titel_generated": (concert["title"]).strip(),

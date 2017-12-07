@@ -201,6 +201,9 @@ class FacebookEventLeecher(PlatformLeecher):
     def map_platform_to_schema(self, concert, band, mbid, other):
         venue = concert["place"]["name"] if "place" in concert else None
         stad = concert["place"]["location"]["city"] if "place" in concert and "location" in concert["place"] and "city" in concert["place"]["location"] else None
+        state = concert["place"]["location"]["state"] if "place" in concert and "location" in concert["place"] and "state" in concert["place"]["location"] else None
+        if state is not None and stad is not None:
+            stad = stad + ", " + state
         land = concert["place"]["location"]["country"] if "place" in concert and "location" in concert["place"] and "country" in concert["place"]["location"] else None
         einddatum = Timestamp(dateparse(concert["end_time"]).date()) if "end_time" in concert else None
         return {

@@ -254,6 +254,10 @@ class SetlistFmLeecher(PlatformLeecher):
             p += 1
 
     def map_platform_to_schema(self, concert, band, mbid, other):
+        stad = concert["venue"]["city"]["name"]
+        state = concert["venue"]["city"]["stateCode"] if "stateCode" in concert["venue"]["city"] else None
+        if state is not None:
+            stad = stad + ", " + state
         return {
             "titel": concert["info"] if "info" in concert else None,
             "titel_generated":  band + " @ " + concert["venue"]["name"] + " in " + concert["venue"]["city"]["name"] + ", " + concert["venue"]["city"]["country"]["code"],
@@ -262,7 +266,7 @@ class SetlistFmLeecher(PlatformLeecher):
             "artiest_id": "setlist_" + concert["artist"]["url"],
             "artiest_mb_naam": band,
             "artiest_mb_id": mbid,
-            "stad": concert["venue"]["city"]["name"],
+            "stad": stad,
             "land": concert["venue"]["city"]["country"]["code"],
             "venue": concert["venue"]["name"],
             "latitude": concert["venue"]["city"]["coords"]["lat"] if "lat" in concert["venue"]["city"]["coords"] else None,

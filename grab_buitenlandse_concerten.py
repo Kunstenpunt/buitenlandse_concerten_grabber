@@ -875,12 +875,14 @@ class Grabber(object):
 
     def clean_country_names(self):
         clean_countries = []
+        clean_iso_codes = []
         country_cleaning = read_excel("resources/country_cleaning.xlsx")
         country_cleaning_additions = set()
         for land in self.df["land"]:
             land = str(land).strip()
             if len(land) == 2:
                 clean_countries.append(self._convert_cleaned_country_name_to_full_name(land.upper()))
+                clean_iso_codes.append(land.upper())
             else:
                 try:
                     clean_country = countries.get(name=land).alpha_2
@@ -892,9 +894,11 @@ class Grabber(object):
                         country_cleaning_additions.add(land)
                         clean_country = None
                 clean_countries.append(self._convert_cleaned_country_name_to_full_name(clean_country))
+                clean_iso_codes.append(clean_country)
         country_cleaning.append(DataFrame([{"original": land, "clean": None} for land in country_cleaning_additions]),
                                 ignore_index=True).drop_duplicates().to_excel("resources/country_cleaning.xlsx")
         self.df["land_clean"] = clean_countries
+        self.df["iso_code_clean"] = clean_iso_codes
 
     def _clean_names(self, column, column_clean, resource):
         item_cleaning_additions = set()

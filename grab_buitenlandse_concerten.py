@@ -426,7 +426,7 @@ class MusicBrainzArtistsBelgium(object):
             "setlist": str(self.__get_rel_url(hit, "setlistfm")),
             "number_of_concerts": self.__number_of_concerts(hit["id"]),
             "on_ignore_list": self.__is_on_ignore_list(hit["id"]),
-            "maingenre": self.genres[hit["id"]] if hit["id"] in self.genres else "(tbc)"
+            "maingenre": self.genres[hit["id"]] if hit["id"] in self.genres else None
         }
 
 
@@ -613,7 +613,7 @@ class Reporter(object):
 
     def set_aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre(self):
         has_concerts = self.current_status_musicbrainz["number_of_concerts"] > 0
-        genre_is_rest = self.current_status_musicbrainz["maingenre"] == "(tbc)"
+        genre_is_rest = self.current_status_musicbrainz["maingenre"].isnull()
         aantal = len(self.current_status_musicbrainz[has_concerts & genre_is_rest].index)
         self.aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre = aantal
 

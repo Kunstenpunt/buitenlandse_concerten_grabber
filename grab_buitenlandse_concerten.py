@@ -527,7 +527,7 @@ class DataKunstenBeConnector(object):
         df = DataFrame(os, columns=["id", "year", "month", "day", "artiest", "organisatie_naam", "organisatie_stad1", "organisatie_land1", "organisatie_stad2", "organisatie_land2", "organisatie_stad3", "organisatie_land3", "venue_naam", "venue_stad", "venue_land"])
         df["event_id"] = ["datakunstenbe_" + str(row[1]["id"]) for row in df.iterrows()]
         df["datum"] = [Timestamp(datetime(int(row[1]["year"]), int(row[1]["month"]), int(row[1]["day"]) if row[1]["day"] > 0 else 1).date()) for row in df.iterrows()]
-        df["stad"] = [row[1]["venue_stad"] if row[1]["venue_stad"] is not None else row[1]["organisatie_stad3"] if row[1]["organisatie_stad3"]  is not None else row[1]["organisatie_stad2"] if row[1]["organisatie_stad2"]  is not None else row[1]["organisatie_stad1"] for row in df.iterrows()]
+        df["stad"] = [row[1]["venue_stad"] if row[1]["venue_stad"] is not None else row[1]["organisatie_stad3"] if row[1]["organisatie_stad3"] is not None else row[1]["organisatie_stad2"] if row[1]["organisatie_stad2"] is not None else row[1]["organisatie_stad1"] for row in df.iterrows()]
         df["land"] = [row[1]["venue_land"] if row[1]["venue_land"] else row[1]["organisatie_land3"] if row[1]["organisatie_land3"] else row[1]["organisatie_land2"] if row[1]["organisatie_land2"] else row[1]["organisatie_land1"] for row in df.iterrows()]
         df["venue"] = [row[1]["venue_naam"] if row[1]["venue_naam"] else row[1]["organisatie_naam"] for row in df.iterrows()]
         df["source"] = ["datakunstenbe"] * len(df.index)

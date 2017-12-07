@@ -98,6 +98,7 @@ class SongkickLeecher(PlatformLeecher):
         concertdate = Timestamp(dateparse(event["start"]["date"]).date())
         return {
             "titel": event["displayName"].strip().rstrip(concertdate.strftime("%B %d, %Y")),
+            "titel_generated": event["displayName"].strip().rstrip(concertdate.strftime("%B %d, %Y")),
             "datum": concertdate,
             "einddatum": Timestamp(dateparse(event["end"]["date"]).date()) if "end" in event else None,
             "artiest": other["artist_name"],
@@ -150,6 +151,7 @@ class BandsInTownLeecher(PlatformLeecher):
             "stad": (concert["venue"]["city"]).strip(),
             "venue": (concert["venue"]["place"]).strip(),
             "titel": (concert["title"]).strip(),
+            "titel_generated": (concert["title"]).strip(),
             "artiest": self.__get_artist_naam(concert),
             "artiest_mb_naam": band,
             "artiest_id": "bandsintown_" + str(concert["artist_id"]),
@@ -198,7 +200,8 @@ class FacebookEventLeecher(PlatformLeecher):
         land = concert["place"]["location"]["country"] if "place" in concert and "location" in concert["place"] and "country" in concert["place"]["location"] else None
         einddatum = Timestamp(dateparse(concert["end_time"]).date()) if "end_time" in concert else None
         return {
-            "titel": concert["name"] if "name" in concert else band + " @ " + venue + " in " + stad + ", " + land,
+            "titel": concert["name"] if "name" in concert else None,
+            "titel_generated": band + " @ " + venue + " in " + stad + ", " + land,
             "datum": Timestamp(dateparse(concert["start_time"]).date()),
             "einddatum": einddatum,
             "event_type": "festival" if einddatum else None,
@@ -245,7 +248,8 @@ class SetlistFmLeecher(PlatformLeecher):
 
     def map_platform_to_schema(self, concert, band, mbid, other):
         return {
-            "titel": concert["info"] if "info" in concert else band + " @ " + concert["venue"]["name"] + " in " + concert["venue"]["city"]["name"] + ", " + concert["venue"]["city"]["country"]["code"],
+            "titel": concert["info"] if "info" in concert else None,
+            "titel_generated":  band + " @ " + concert["venue"]["name"] + " in " + concert["venue"]["city"]["name"] + ", " + concert["venue"]["city"]["country"]["code"],
             "datum": Timestamp(dateparse(concert["eventDate"], ["%d-%m-%Y"]).date()),
             "artiest": concert["artist"]["name"],
             "artiest_id": "setlist_" + concert["artist"]["url"],

@@ -350,5 +350,8 @@ class TestGrabber(unittest.TestCase):
         self.grabber.infer_cancellations()
         self.assertListEqual(self.grabber.df["cancelled"].tolist(), [True, False])
 
+    def test_establish_source_hyperlink(self):
+        self.assertEqual(self.grabber._establish_source_hyperlink("facebook9871237"), ("Facebook", "9871237"))
+
 if __name__ == '__main__':
     unittest.main()

@@ -959,6 +959,36 @@ class Grabber(object):
                 self.df.at[concerts[concerts["source"] == source].index[0], "visible"] = True
         self.df["ignore"].fillna(False, inplace=True)  # fill rest of ignored concerts with False
 
+    def _set_source_outlinks_per_concert(self):
+        for i in range(0, 10, 1):
+            self.df["source_" + str(i)] = [None] * len(self.df.index)
+            self.df["source_link_" + str(i)] = [None] * len(self.df.index)
+        for concert_id in self.df["concert_id"].unique():
+            concerts = self.df[self.df["concert_id"] == concert_id]
+            event_ids = concerts["event_id"].values
+            for i, event_id in enumerate(event_ids):
+                source, source_link = self._establish_source_hyperlink(event_id)
+                event_id__index_ = concerts[concerts["event_id"] == event_id].index[0]
+                self.df.at[event_id__index_, "source_" + str(i)] = source
+                self.df.at[event_id__index_, "source_link_" + str(i)] = source_link
+
+    @staticmethod
+    def _establish_source_hyperlink(event_id):
+        if "facebook" in event_id:
+            return "Facebook", "https://www.facebook.com/events/" + event_id.split("facebook")[-1]
+        elif "songkick" in event_id:
+            return "Songkick", "https://www.songkick.com/concerts/" + event_id.split("_")[-1]
+        elif "bandsintown" in event_id:
+            return "BandsInTown", "http://bandsintown.com/event/" + event_id.split("_")[-1]
+        elif "setlist" in event_id:
+            return "Setlist.fm", "https://www.setlist.fm/setlist/a/0/b-" + event_id.split("setlist")[-1]
+        elif "podiuminfo" in event_id:
+            return "Podium/Festivalinfo", "http://festivalinfo.nl"
+        elif "datakunstenbe" in event_id:
+            return "Eigen kweek", "http://data.kunsten.be"
+        else:
+            return None, None
+
     @staticmethod
     def _establish_optimal_source(concert_source_values, concert_cancellations, potential_source_values):
         source = None

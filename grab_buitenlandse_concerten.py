@@ -558,6 +558,7 @@ class DriveSyncer(object):
         self.resource_files_gdrive_ids = [(resource_file, self.get_google_drive_id(resource_file)) for resource_file in self.resource_files]
 
     def get_google_drive_id(self, filename):
+        print("\t", filename)
         return self.drive.ListFile({'q': "'0B4I3gofjeGMHRFhZbzNzLTJCQU0' in parents and title='{0}' and trashed=false".format(filename)}).GetList()[0]["id"]
 
     def get_google_drive_link(self, filename):

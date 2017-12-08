@@ -19,6 +19,11 @@ from pycountry import countries
 from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
 from resources.sendmail.sendmessage import sendmail
+from requests import post
+import hashlib
+import hmac
+import binascii
+from json import dumps
 
 
 class PlatformLeecher(object):
@@ -852,6 +857,33 @@ class Grabber(object):
         print("\tgenerating a diff, and writing it to file")
         self._generate_diff()
         self.diff.to_excel("output/diff_" + str(self.now.date()) + ".xlsx")
+
+    def send_diff_to_mr_henry(self):
+        for record in self.diff.to_dict("records"):
+            self._send_record_to_mr_henry_api(record)
+
+    @staticmethod
+    def _send_record_to_mr_henry_api(data, test=False):
+        message = bytes(dumps(data), "utf-8")
+        secret = b"d0GEj4zvdf2BwEHGY64RfKFDHijjAL0R"
+
+        signature = binascii.b2a_hex(hmac.new(secret, message, digestmod=hashlib.sha256).digest())
+
+        base_url = "https://have-love-will-travel.herokuapp.com/"
+        url = base_url + "import-json"
+
+        params = {"signature": signature, "test": test}
+        headers = {"Content-Type": "application/json"}
+
+        r = post(url, data=message, params=params, headers=headers)
+        if r.status_code != 200:
+
+            # TODO Met een volgende update wordt de "X-Request-ID" header ook gekoppeld aan bug reporting en de logs.
+            # Als er een error voorkomt tijdens het uploaden naar de API kan je die header value opslaan in een log file
+            # en aan ons bezorgen. Op basis daarvan kunnen wij dan achterhalen wat er exact fout ging.
+
+            print("issue with sending this record to the api", data)
+        return r
 
     def _update_field_based_on_new_leech(self, field):
         tmp = self.df[["event_id", field]].drop_duplicates()

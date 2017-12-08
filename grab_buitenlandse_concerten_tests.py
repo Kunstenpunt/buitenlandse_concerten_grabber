@@ -2,6 +2,7 @@ import unittest
 from grab_buitenlandse_concerten import Grabber
 from pandas import DataFrame, isnull, Timestamp, Series, read_excel
 from datetime import datetime, timedelta
+from json import loads
 
 
 class TestReporter(unittest.TestCase):
@@ -25,6 +26,14 @@ class TestReporter(unittest.TestCase):
         self.grabber.reporter.take_snapshot_of_status("current")
         self.grabber.reporter.set_aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre()
         self.assertTrue(isinstance(self.grabber.reporter.aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre, int))
+
+    def test_mr_henry(self):
+        data = {"artiest_mb_id": "tom van kunstenpunt", "event_id": 123, "titel": "voor q", "artiest_merge_naam": "tom ruette", "datum": datetime(2010, 1, 2).strftime("%Y/%m/%d")}
+        r = self.grabber._send_record_to_mr_henry_api(data, test=True)
+        self.assertEqual(r.status_code, 200)
+        self.maxDiff = None
+        self.assertEqual(loads(r.content)["artist_mb_id"], data["artiest_mb_id"])
+        self.assertTrue(r.headers["X-Unit-Test"])
 
 
 class TestGrabber(unittest.TestCase):

@@ -822,8 +822,11 @@ class Grabber(object):
         self.previous = read_excel("output/latest.xlsx")
 
         print("\tfixing dates and enddates, and dropping concert ids, clean cities, clean countries, visibility")
-        for column in ["concert_id", "stad_clean", "land_clean", "visible"]:
-            self.previous.drop(column, 1, inplace=True)
+        for column in ["concert_id", "stad_clean", "land_clean", "iso_code_clean", "venue_clean", "visible"]:
+            try:
+                self.previous.drop(column, 1, inplace=True)
+            except ValueError:
+                continue
 
         print("\tcombing the two datasets")
         self.df = self.previous.append(self.current, ignore_index=True)

@@ -208,7 +208,7 @@ class FacebookEventLeecher(PlatformLeecher):
         einddatum = Timestamp(dateparse(concert["end_time"]).date()) if "end_time" in concert else None
         return {
             "titel": concert["name"] if "name" in concert else None,
-            "titel_generated": band + " @ " + venue + " in " + stad + ", " + land,
+            "titel_generated": str(band) + " @ " + str(venue) + " in " + str(stad) + ", " + str(land),
             "datum": Timestamp(dateparse(concert["start_time"]).date()),
             "einddatum": einddatum,
             "event_type": "festival" if einddatum else None,

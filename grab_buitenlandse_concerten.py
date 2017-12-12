@@ -8,7 +8,7 @@ from time import sleep
 from json import loads, dump, load, decoder
 from requests import get, exceptions
 from math import ceil
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import bandsintown
 from urllib import parse as urlparse
 import facebook
@@ -868,8 +868,16 @@ class Grabber(object):
             self._send_record_to_mr_henry_api(record, test=test)
 
     @staticmethod
-    def _send_record_to_mr_henry_api(data, test=False):
-        message = bytes(dumps(data), "utf-8")
+    def json_serial(obj):
+        """JSON serializer for objects not serializable by default json code"""
+
+        if isinstance(obj, (datetime, date, Timestamp)):
+            return obj.strftime("%Y/%m/%d")
+        raise TypeError("Type %s not serializable" % type(obj))
+
+    def _send_record_to_mr_henry_api(self, data, test=False):
+        data = {key: data[key] for key in data if not isnull(data[key])}
+        message = bytes(dumps(data, default=self.json_serial), "utf-8")
         secret = b"d0GEj4zvdf2BwEHGY64RfKFDHijjAL0R"
 
         signature = binascii.b2a_hex(hmac.new(secret, message, digestmod=hashlib.sha256).digest())

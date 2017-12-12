@@ -828,7 +828,7 @@ class Grabber(object):
         self.previous = read_excel("output/latest.xlsx")
 
         print("\tfixing dates and enddates, and dropping concert ids, clean cities, clean countries, visibility")
-        for column in ["concert_id", "stad_clean", "land_clean", "iso_code_clean", "venue_clean", "visible"]:
+        for column in ["concert_id", "stad_clean", "land_clean", "iso_code_clean", "venue_clean", "visible", "source_0", "source_link_0", "source_1", "source_link_1", "source_2", "source_link_2", "source_3", "source_link_3", "source_4", "source_link_4"]:
             try:
                 self.previous.drop(column, 1, inplace=True)
             except ValueError:

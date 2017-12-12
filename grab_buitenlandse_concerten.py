@@ -1002,9 +1002,10 @@ class Grabber(object):
         for concert_id in self.df["concert_id"].unique():
             concerts = self.df[self.df["concert_id"] == concert_id]
             event_ids = concerts["event_id"].values
+            visible_event_id = concerts[concerts["visible"]]["event_id"].values[0]
             for i, event_id in enumerate(event_ids):
                 source, source_link = self._establish_source_hyperlink(event_id)
-                event_id__index_ = concerts[concerts["event_id"] == event_id].index[0]
+                event_id__index_ = concerts[concerts["event_id"] == visible_event_id].index[0]
                 self.df.at[event_id__index_, "source_" + str(i)] = source
                 self.df.at[event_id__index_, "source_link_" + str(i)] = source_link
 

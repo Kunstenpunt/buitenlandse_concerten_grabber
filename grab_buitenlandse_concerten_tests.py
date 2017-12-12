@@ -28,12 +28,20 @@ class TestReporter(unittest.TestCase):
         self.assertTrue(isinstance(self.grabber.reporter.aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre, int))
 
     def test_mr_henry(self):
-        data = {"artiest_mb_id": "tom van kunstenpunt", "event_id": 123, "titel": "voor q", "artiest_merge_naam": "tom ruette", "datum": datetime(2010, 1, 2).strftime("%Y/%m/%d")}
+        data = {"artiest_mb_id": "tom van kunstenpunt", "event_id": 123, "titel": "voor q",
+                "artiest_merge_naam": "tom ruette", "datum": datetime(2010, 1, 2), "source_0": "testsource0",
+                "source_link_0": "sourcelink0", "source_1": "testsource1", "source_link_1": "testsourcelink1"}
         r = self.grabber._send_record_to_mr_henry_api(data, test=True)
+        print(r.content)
+        print(r.headers)
         self.assertEqual(r.status_code, 200)
         self.maxDiff = None
         self.assertEqual(loads(r.content)["artist_mb_id"], data["artiest_mb_id"])
         self.assertTrue(r.headers["X-Unit-Test"])
+
+    def tests_do_mr_henry(self):
+        self.grabber.df = read_excel("output/latest.xlsx")
+        self.grabber.send_data_to_mr_henry(test=True)
 
 
 class TestGrabber(unittest.TestCase):
@@ -358,6 +366,32 @@ class TestGrabber(unittest.TestCase):
         self.assertTrue(self.grabber._is_cancellation(row))
         self.grabber.infer_cancellations()
         self.assertListEqual(self.grabber.df["cancelled"].tolist(), [True, False])
+
+    def test_set_source_link(self):
+        self.grabber.df = DataFrame([
+            {
+                "event_id": "facebook884162221625243",
+                "concert_id": 1,
+                "visible": True
+            },
+            {
+                "event_id": "songkick_5318473",
+                "concert_id": 2,
+                "visible": True
+            },
+            {
+                "event_id": "facebook_5318473",
+                "concert_id": 2,
+                "visible": False
+            },
+            {
+                "event_id": "beren_gieren_1",
+                "concert_id": 3,
+                "visible": True
+            }
+        ])
+        self.grabber._set_source_outlinks_per_concert()
+        print(self.grabber.df)
 
     def test_establish_source_hyperlink(self):
         self.assertEqual(self.grabber._establish_source_hyperlink("facebook9871237"), ("Facebook", "9871237"))

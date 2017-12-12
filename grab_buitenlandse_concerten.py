@@ -850,7 +850,7 @@ class Grabber(object):
         self.df.drop_duplicates(subset=["artiest_mb_id", "event_id"], keep="first", inplace=True)  # keep first to reflect any updates
 
         print("\tadding the genres")
-        self.df["maingenre"] = [self.mbab.genres[mbid] if mbid in self.mbab.genres else "(tbc)" for mbid in self.df["artiest_mb_id"]]
+        self.df["maingenre"] = [self.mbab.genres[mbid] if mbid in self.mbab.genres else None for mbid in self.df["artiest_mb_id"]]
 
         print("\tapplying last seen on date to today")
         self._update_last_seen_on_dates_of_previous_events_that_are_still_current()

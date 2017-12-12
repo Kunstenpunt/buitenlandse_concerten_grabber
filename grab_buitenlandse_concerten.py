@@ -772,6 +772,7 @@ class Grabber(object):
         self.handle_ambiguous_artists()
         self.make_concerts()
         self.infer_cancellations()
+        self._set_source_outlinks_per_concert()
         self.persist_output()
         self.reporter.take_snapshot_of_status("current")
         self.syncdrive.upstream()

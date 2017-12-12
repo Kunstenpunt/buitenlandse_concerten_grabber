@@ -859,9 +859,13 @@ class Grabber(object):
         self._generate_diff()
         self.diff.to_excel("output/diff_" + str(self.now.date()) + ".xlsx")
 
-    def send_diff_to_mr_henry(self):
-        for record in self.diff.to_dict("records"):
-            self._send_record_to_mr_henry_api(record)
+    def send_data_to_mr_henry(self, test=False):
+        df_filtered = self.df[(self.df["iso_code_clean"] != "BE") &
+                              (self.df["visible"]) &
+                              (-self.df["cancelled"])]
+        for record in df_filtered.to_dict("records"):
+            print(record)
+            self._send_record_to_mr_henry_api(record, test=test)
 
     @staticmethod
     def _send_record_to_mr_henry_api(data, test=False):

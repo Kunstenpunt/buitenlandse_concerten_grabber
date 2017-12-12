@@ -1023,7 +1023,7 @@ class Grabber(object):
         elif "podiuminfo" in event_id:
             return "Podium/Festivalinfo", "http://festivalinfo.nl"
         elif "datakunstenbe" in event_id:
-            return "Eigen kweek", "http://data.kunsten.be"
+            return "Kunstenpunt", "http://data.kunsten.be"
         else:
             return None, None
 

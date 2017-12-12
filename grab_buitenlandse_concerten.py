@@ -25,7 +25,6 @@ import hmac
 import binascii
 from json import dumps
 
-
 class PlatformLeecher(object):
     def __init__(self):
         self.platform_identifiers = []

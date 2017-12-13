@@ -878,7 +878,8 @@ class Grabber(object):
     def _send_record_to_mr_henry_api(self, data, test=False):
         data = {key: data[key] for key in data if not isnull(data[key])}
         message = bytes(dumps(data, default=self.json_serial), "utf-8")
-        secret = b"d0GEj4zvdf2BwEHGY64RfKFDHijjAL0R"
+        with open("resources/mrhenrysecret.txt", "rb") as f:
+            secret = bytes(f.read())
 
         signature = binascii.b2a_hex(hmac.new(secret, message, digestmod=hashlib.sha256).digest())
 

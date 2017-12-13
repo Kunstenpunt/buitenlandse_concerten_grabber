@@ -891,11 +891,6 @@ class Grabber(object):
 
         r = post(url, data=message, params=params, headers=headers)
         if r.status_code != 200:
-
-            # TODO Met een volgende update wordt de "X-Request-ID" header ook gekoppeld aan bug reporting en de logs.
-            # Als er een error voorkomt tijdens het uploaden naar de API kan je die header value opslaan in een log file
-            # en aan ons bezorgen. Op basis daarvan kunnen wij dan achterhalen wat er exact fout ging.
-
             print("issue with sending this record to the api", message, r.status_code, r.headers["X-Request-ID"])
         return r
 

@@ -943,7 +943,6 @@ class Grabber(object):
             else:
                 try:
                     clean_country = countries.get(name=land).alpha_2
-                    clean_country = "UK" if clean_country == "GB" else clean_country
                 except KeyError:
                     if land in country_cleaning["original"].values:
                         clean_country = country_cleaning[country_cleaning["original"] == land]["clean"].iloc[0]

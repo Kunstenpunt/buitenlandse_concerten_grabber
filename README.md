@@ -7,7 +7,7 @@ In addition, we keep a channel open to report concert info manually, and there h
 
 ## Aggregation flow
 
-![Automatic flow](resources/flow.png?raw=true "Automatic flow of concert info aggregation")
+![Automatic flow](flow.png?raw=true "Automatic flow of concert info aggregation")
 
 Information about artists, including their identity on Songkick, Bands in Town, Setlist.fm and Facebook, is collected via the open database musicbrainz.org.
 Based on the identify information for the gig finder platforms in Musicbrainz, we can use the APIs of the gig finder platforms to gather the concert data.

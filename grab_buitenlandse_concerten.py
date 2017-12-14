@@ -928,7 +928,7 @@ class Grabber(object):
         try:
             return countries.get(alpha_2=twolettercode).name
         except KeyError:
-            return "Unknown"
+            return None
 
     def clean_country_names(self):
         clean_countries = []

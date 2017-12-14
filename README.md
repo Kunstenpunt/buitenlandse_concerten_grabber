@@ -18,11 +18,11 @@ Based on the identify information for the gig finder platforms in Musicbrainz, w
 The gathered data needs to be cleaned:
 
 - within platform
--- we have to consider artists with the same name whose concerts are reported as coming from the same artist
+ - we have to consider artists with the same name whose concerts are reported as coming from the same artist
 
 - across platforms
--- we have to deduplicate concerts that are announced on several platforms
--- we have to harmonize venue names and place names
+ - we have to deduplicate concerts that are announced on several platforms
+ - we have to harmonize venue names and place names
 
 We are powerless against faulty reported data.
 

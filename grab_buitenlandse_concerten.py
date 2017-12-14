@@ -862,7 +862,8 @@ class Grabber(object):
     def send_data_to_mr_henry(self, test=False):
         df_filtered = self.df[(self.df["iso_code_clean"] != "BE") &
                               (self.df["visible"]) &
-                              (-self.df["cancelled"])]
+                              (-self.df["cancelled"]) &
+                              (self.df["datum"] >= datetime(2013, 1, 1))]
         for record in df_filtered.to_dict("records"):
             print(record)
             self._send_record_to_mr_henry_api(record, test=test)

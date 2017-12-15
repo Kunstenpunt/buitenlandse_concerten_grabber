@@ -868,8 +868,6 @@ class Grabber(object):
 
     @staticmethod
     def json_serial(obj):
-        """JSON serializer for objects not serializable by default json code"""
-
         if isinstance(obj, (datetime, date, Timestamp)):
             return obj.strftime("%Y/%m/%d")
         raise TypeError("Type %s not serializable" % type(obj))

@@ -39,7 +39,7 @@ class TestReporter(unittest.TestCase):
 
     def tests_do_mr_henry(self):
         self.grabber.df = read_excel("output/latest.xlsx")
-        self.grabber.send_data_to_mr_henry(test=True)
+        self.grabber.send_data_to_mr_henry(test=False)
 
 
 class TestGrabber(unittest.TestCase):

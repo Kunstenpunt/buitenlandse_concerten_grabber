@@ -32,8 +32,6 @@ class TestReporter(unittest.TestCase):
                 "artiest_merge_naam": "tom ruette", "datum": datetime(2010, 1, 2), "source_0": "testsource0",
                 "source_link_0": "sourcelink0", "source_1": "testsource1", "source_link_1": "testsourcelink1"}
         r = self.grabber._send_record_to_mr_henry_api(data, test=True)
-        print(r.content)
-        print(r.headers)
         self.assertEqual(r.status_code, 200)
         self.maxDiff = None
         self.assertEqual(loads(r.content)["artist_mb_id"], data["artiest_mb_id"])

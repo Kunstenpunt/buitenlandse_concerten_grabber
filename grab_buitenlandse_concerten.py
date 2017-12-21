@@ -773,8 +773,8 @@ class Grabber(object):
         self.make_concerts()
         self.infer_cancellations()
         self._set_source_outlinks_per_concert()
-        self.persist_output()
         self.send_data_to_mr_henry()
+        self.persist_output()
         self.reporter.take_snapshot_of_status("current")
         self.syncdrive.upstream()
         self.reporter.do()
@@ -861,8 +861,7 @@ class Grabber(object):
         self.diff.to_excel("output/diff_" + str(self.now.date()) + ".xlsx")
 
     def send_data_to_mr_henry(self, test=False):
-        df_filtered = self.df[(self.df["iso_code_clean"] != "BE") &
-                              (self.df["datum"] >= datetime(2013, 1, 1))]
+        df_filtered = self.df[(self.df["iso_code_clean"] != "BE")]
         for record in df_filtered.to_dict("records"):
             print(record)
             self._send_record_to_mr_henry_api(record, test=test)
@@ -1092,7 +1091,7 @@ class Grabber(object):
                 self.df.at[festival_index, "visible"] = False
 
     def _is_cancellation(self, row):
-        return (Timestamp(row["datum"]) > Timestamp(self.now.date())) & (Timestamp(row["last_seen_on"]) < Timestamp(self.now.date() - timedelta(days=5)))
+        return (Timestamp(row["datum"]) > Timestamp(self.now.date())) & (Timestamp(row["last_seen_on"]) < Timestamp(self.now.date() - timedelta(days=2)))
 
     def infer_cancellations(self):
         print("inferring cancellations")

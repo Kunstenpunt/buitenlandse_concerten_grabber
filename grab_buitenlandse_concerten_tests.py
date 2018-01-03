@@ -46,6 +46,11 @@ class TestGrabber(unittest.TestCase):
     def setUp(self):
         self.grabber = Grabber()
 
+    def test_lat_lon_in_belgium(self):
+        antwerpen = {"latitude": 51.2603015, "longitude": 4.2176391}
+        berlijn = {"latitude": 52.5067614, "longitude": 13.284651}
+        self.assertTrue(self.grabber._concert_is_in_belgium(antwerpen))
+        self.assertFalse(self.grabber._concert_is_in_belgium(berlijn))
     def test_convert_iso_code_to_full_name(self):
         self.assertEqual(self.grabber._convert_cleaned_country_name_to_full_name("DE"), "Germany")
         self.assertEqual(self.grabber._convert_cleaned_country_name_to_full_name("GB"), "United Kingdom")
@@ -300,7 +305,9 @@ class TestGrabber(unittest.TestCase):
                 "artiest_merge_naam": "a",
                 "stad_clean": "b",
                 "concert_id": 0,
-                "ignore": False
+                "ignore": False,
+                "latitude": 51.2603015,
+                "longitude": 13.2176391
             },
             {
                 "event_id": "sk1",
@@ -310,7 +317,9 @@ class TestGrabber(unittest.TestCase):
                 "artiest_merge_naam": "a",
                 "stad_clean": "b",
                 "concert_id": 0,
-                "ignore": False
+                "ignore": False,
+                "latitude": 51.2603015,
+                "longitude": 13.2176391
             }
         ])
         self.grabber._select_visibility_per_concert()
@@ -327,7 +336,9 @@ class TestGrabber(unittest.TestCase):
                 "artiest_merge_naam": "a",
                 "stad_clean": "b",
                 "concert_id": 0,
-                "ignore": False
+                "ignore": False,
+                "latitude": 51.2603015,
+                "longitude": 13.2176391
             }
         ])
         self.grabber._select_visibility_per_concert()

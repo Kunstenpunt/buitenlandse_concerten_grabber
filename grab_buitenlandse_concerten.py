@@ -24,6 +24,7 @@ import hashlib
 import hmac
 import binascii
 from json import dumps
+import geojson
 
 
 class PlatformLeecher(object):
@@ -739,6 +740,8 @@ class Grabber(object):
         self.current = None
         self.df = None
         self.diff = None
+        with open("resources/belgium/admin_level_2.geojson", "r", "utf-8") as f:
+            self.belgium = geojson.load(f)
 
     def grab(self):
         print("making snapshot")
@@ -988,16 +991,38 @@ class Grabber(object):
                 self.df.at[i, "concert_id"] = gig_triple_id
             gig_triple_id += 1
 
+    @staticmethod
+    def __inside_polygon(x, y, points):
+        n = len(points)
+        inside = False
+        p1x, p1y = points[0]
+        for i in range(1, n + 1):
+            p2x, p2y = points[i % n]
+            if y > min(p1y, p2y):
+                if y <= max(p1y, p2y):
+                    if x <= max(p1x, p2x):
+                        if p1y != p2y:
+                            xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                        if p1x == p2x or x <= xinters:
+                            inside = not inside
+            p1x, p1y = p2x, p2y
+        return inside
+
+    def _concert_is_in_belgium(self, concert):
+        return True in [self.__inside_polygon(concert["longitude"], concert["latitude"], list(geojson.utils.coords(self.belgium[i]))) for i in range(0, len(self.belgium["features"]))]
+
     def _select_visibility_per_concert(self):
         self.df["visible"] = [False] * len(self.df.index)
         for concert_id in self.df["concert_id"].unique():
             concerts = self.df[self.df["concert_id"] == concert_id]
-            concert_cancellations = concerts.apply(self._is_cancellation, axis=1)
-            concert_source_values = concerts["source"].values
-            psv = ["manual", "datakunstenbe", "podiumfestivalinfo", "songkick", "bandsintown", "setlist", "facebook"]
-            source = self._establish_optimal_source(concert_source_values, concert_cancellations, psv)
-            if source:
-                self.df.at[concerts[concerts["source"] == source].index[0], "visible"] = True
+            in_belgium = True in [self._concert_is_in_belgium(concert) for concert in concerts.to_dict("records")]
+            if not in_belgium:
+                concert_cancellations = concerts.apply(self._is_cancellation, axis=1)
+                concert_source_values = concerts["source"].values
+                psv = ["manual", "datakunstenbe", "podiumfestivalinfo", "songkick", "bandsintown", "setlist", "facebook"]
+                source = self._establish_optimal_source(concert_source_values, concert_cancellations, psv)
+                if source:
+                    self.df.at[concerts[concerts["source"] == source].index[0], "visible"] = True
         self.df["ignore"].fillna(False, inplace=True)  # fill rest of ignored concerts with False
 
     def _set_source_outlinks_per_concert(self):

@@ -1106,7 +1106,7 @@ class Grabber(object):
                 (self.df["stad_clean"] == stad_clean)]
             precise_events_source_values = precise_events["source"].values
             concert_cancellations = precise_events.apply(self._is_cancellation, axis=1)
-            potential_source_values = ["manual", "datakunstenbe", "songkick", "bandsintown", "setlist", "facebook"]
+            potential_source_values = ["manual", "datakunstenbe", "bandsintown", "setlist", "facebook", "songkick"]
             source = self._establish_optimal_source(precise_events_source_values, concert_cancellations, potential_source_values)
             if source:
                 precise_concert_index = precise_events[precise_events["source"] == source].index[0]

@@ -54,7 +54,7 @@ class TestGrabber(unittest.TestCase):
     def test_convert_iso_code_to_full_name(self):
         self.assertEqual(self.grabber._convert_cleaned_country_name_to_full_name("DE"), "Germany")
         self.assertEqual(self.grabber._convert_cleaned_country_name_to_full_name("GB"), "United Kingdom")
-        self.assertEqual(self.grabber._convert_cleaned_country_name_to_full_name("VV"), "Unknown")
+        self.assertEqual(self.grabber._convert_cleaned_country_name_to_full_name("VV"), None)
 
     def test_add_podiumfestivalinfo(self):
         self.grabber.current = DataFrame([{}])

@@ -401,7 +401,7 @@ class TestGrabber(unittest.TestCase):
         print(self.grabber.df)
 
     def test_establish_source_hyperlink(self):
-        self.assertEqual(self.grabber._establish_source_hyperlink("facebook9871237"), ("Facebook", "9871237"))
+        self.assertEqual(self.grabber._establish_source_hyperlink("facebook9871237"), ("Facebook", "https://www.facebook.com/events/9871237"))
 
 if __name__ == '__main__':
     unittest.main()

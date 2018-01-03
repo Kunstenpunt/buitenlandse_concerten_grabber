@@ -51,6 +51,7 @@ class TestGrabber(unittest.TestCase):
         berlijn = {"latitude": 52.5067614, "longitude": 13.284651}
         self.assertTrue(self.grabber._concert_is_in_belgium(antwerpen))
         self.assertFalse(self.grabber._concert_is_in_belgium(berlijn))
+
     def test_convert_iso_code_to_full_name(self):
         self.assertEqual(self.grabber._convert_cleaned_country_name_to_full_name("DE"), "Germany")
         self.assertEqual(self.grabber._convert_cleaned_country_name_to_full_name("GB"), "United Kingdom")
@@ -131,7 +132,6 @@ class TestGrabber(unittest.TestCase):
         self.assertEqual(self.grabber.df.loc[0]["visible"], False)
         self.assertEqual(self.grabber.df.loc[0]["concert_id"], 2)
         self.assertEqual(self.grabber.df.loc[1]["visible"], True)
-
 
     def test_update_field_based_on_new_leech(self):
         self.grabber.df = DataFrame([

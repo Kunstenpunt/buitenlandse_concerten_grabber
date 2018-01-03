@@ -950,8 +950,7 @@ class Grabber(object):
                         clean_country = None
                 clean_countries.append(self._convert_cleaned_country_name_to_full_name(clean_country))
                 clean_iso_codes.append(clean_country)
-        country_cleaning.append(DataFrame([{"original": land, "clean": None} for land in country_cleaning_additions]),
-                                ignore_index=True).drop_duplicates().to_excel("resources/country_cleaning.xlsx")
+        country_cleaning.append(DataFrame([{"original": land, "clean": None} for land in country_cleaning_additions]), ignore_index=True).drop_duplicates().to_excel("resources/country_cleaning.xlsx")
         self.df["land_clean"] = clean_countries
         self.df["iso_code_clean"] = clean_iso_codes
 

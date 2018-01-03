@@ -132,8 +132,6 @@ class TestGrabber(unittest.TestCase):
         self.assertEqual(self.grabber.df.loc[0]["concert_id"], 2)
         self.assertEqual(self.grabber.df.loc[1]["visible"], True)
 
-        self.grabber.df = read_excel("output/latest.xlsx")
-        self.grabber._set_precise_date_for_festivals()
 
     def test_update_field_based_on_new_leech(self):
         self.grabber.df = DataFrame([
@@ -344,8 +342,8 @@ class TestGrabber(unittest.TestCase):
         self.grabber._select_visibility_per_concert()
         self.assertTrue(self.grabber.df.iloc[0]["visible"])
 
-        self.grabber.df = read_excel("output/latest.xlsx")
-        self.grabber._select_visibility_per_concert()
+        # self.grabber.df = read_excel("output/latest.xlsx")
+        # self.grabber._select_visibility_per_concert()
 
     def test_fix_weird_symbols(self):
         self.assertIsInstance(self.grabber._fix_weird_symbols("ü@sdf£µù)°ñ"), str)

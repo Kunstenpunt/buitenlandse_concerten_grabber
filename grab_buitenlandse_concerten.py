@@ -18,7 +18,6 @@ from configparser import ConfigParser
 from pycountry import countries
 from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
-from resources.sendmail.sendmessage import sendmail
 from requests import post
 import hashlib
 import hmac
@@ -676,7 +675,6 @@ class Reporter(object):
         self.compare_current_with_old_status()
         self.set_aantal_nieuwe_concerten()
         self.generate_report()
-        self.send_report()
 
     def generate_report(self):
         self.report = {
@@ -717,7 +715,6 @@ class Reporter(object):
             dump(self.report, f, indent=2)
         with open("resources/sendmail/template.mstch", "r", "utf-8") as f:
             template = f.read()
-        sendmail(self.report, template)
 
     def set_datum_vorige_check(self):
         try:

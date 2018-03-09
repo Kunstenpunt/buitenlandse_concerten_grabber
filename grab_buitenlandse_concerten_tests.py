@@ -197,58 +197,6 @@ class TestGrabber(unittest.TestCase):
         self.grabber._update_last_seen_on_dates_of_previous_events_that_are_still_current()
         self.assertEqual(self.grabber.df[self.grabber.df["event_id"] == "sk2"]["last_seen_on"].values[0], datetime.now().date())
 
-    def test_create_diff(self):
-        self.grabber.previous = DataFrame([
-            {
-                "event_id": "sk1",
-                "titel": "test1",
-                "artiest_mb_id": "a",
-                "last_seen_on": datetime.now().date() - timedelta(days=2)
-            },
-            {
-                "event_id": "sk2",
-                "titel": "test2",
-                "artiest_mb_id": "a",
-                "last_seen_on": datetime.now().date() - timedelta(days=2)
-            },
-            {
-                "event_id": "sk3",
-                "titel": "test3",
-                "artiest_mb_id": "a",
-                "last_seen_on": datetime.now().date() - timedelta(days=2)
-            }
-        ])
-        self.grabber.current = DataFrame([
-            {
-                "event_id": "sk2",
-                "titel": None,
-                "artiest_mb_id": "a",
-                "last_seen_on": datetime.now().date()
-            },
-            {
-                "event_id": "sk3",
-                "titel": "test3",
-                "artiest_mb_id": "a",
-                "last_seen_on": datetime.now().date()
-            },
-            {
-                "event_id": "sk3",
-                "titel": "test3",
-                "artiest_mb_id": "b",
-                "last_seen_on": datetime.now().date()
-            },
-            {
-                "event_id": "sk4",
-                "titel": "test4",
-                "artiest_mb_id": "a",
-                "last_seen_on": datetime.now().date()
-            }
-        ])
-        self.grabber.df = self.grabber.previous.append(self.grabber.current, ignore_index=True)
-        self.grabber.df.drop_duplicates(subset=["artiest_mb_id", "event_id"], keep="first", inplace=True)
-        self.grabber._generate_diff()
-        self.assertEqual(self.grabber.diff.index.tolist(), [2, 3])
-
     def test_match_artiest_naam_to_mbid(self):
         self.grabber.mbab.load_list()
         self.assertIsNotNone(self.grabber._match_artist_name_to_mbid("Pornorama"))

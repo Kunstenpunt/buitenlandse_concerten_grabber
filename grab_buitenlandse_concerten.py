@@ -731,7 +731,7 @@ class Grabber(object):
         self.previous = None
         self.current = None
         self.df = None
-        self.diff = None
+        self.diff_event_ids = None
         with open("resources/belgium/admin_level_2.geojson", "r", "utf-8") as f:
             self.belgium = geojson.load(f)
 
@@ -851,9 +851,6 @@ class Grabber(object):
         print("\tapplying last seen on date to today")
         self._update_last_seen_on_dates_of_previous_events_that_are_still_current()
 
-        print("\tgenerating a diff, and writing it to file")
-        self._generate_diff()
-        self.diff.to_excel("output/diff_" + str(self.now.date()) + ".xlsx")
 
     def send_data_to_mr_henry(self, test=False):
         df_filtered = self.df[(self.df["iso_code_clean"] != "BE")]
@@ -899,10 +896,6 @@ class Grabber(object):
             if len(update_values) > 1:
                 self.df.at[idx, field] = update_values[-1]  # overwrite with latest value
 
-    def _generate_diff(self):
-        cur_not_in_prev = -self.current[["event_id", "artiest_mb_id"]].isin(self.previous[["event_id", "artiest_mb_id"]].to_dict(orient="list"))
-        diff_indices = (cur_not_in_prev["event_id"] | cur_not_in_prev["artiest_mb_id"])
-        self.diff = self.current[diff_indices]
 
     def _update_last_seen_on_dates_of_previous_events_that_are_still_current(self):
         prev_also_in_cur = self.previous[["event_id", "artiest_mb_id"]].isin(self.current[["event_id", "artiest_mb_id"]].to_dict(orient="list"))

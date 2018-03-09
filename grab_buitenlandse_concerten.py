@@ -152,7 +152,7 @@ class BandsInTownLeecher(PlatformLeecher):
     def map_platform_to_schema(self, concert, band, mbid, other):
         region = concert["venue"]["region"] if "region" in concert["venue"] else None
         stad = (concert["venue"]["city"]).strip()
-        if region is not None:
+        if region is not None and (concert["venue"]["country"]).strip() in ["Ac United States", "United States", "Canada", "Brazil", "Australia"]:
             stad = stad + ", " + region.strip()
         return {
             "datum": Timestamp(dateparse(concert["datetime"]).date()),
@@ -207,9 +207,9 @@ class FacebookEventLeecher(PlatformLeecher):
         venue = concert["place"]["name"] if "place" in concert else None
         stad = concert["place"]["location"]["city"] if "place" in concert and "location" in concert["place"] and "city" in concert["place"]["location"] else None
         state = concert["place"]["location"]["state"] if "place" in concert and "location" in concert["place"] and "state" in concert["place"]["location"] else None
-        if state is not None and stad is not None:
-            stad = stad + ", " + state
         land = concert["place"]["location"]["country"] if "place" in concert and "location" in concert["place"] and "country" in concert["place"]["location"] else None
+        if state is not None and stad is not None and land in ["United States", "Brazil", "Canada", "Australia"]:
+            stad = stad + ", " + state
         einddatum = Timestamp(dateparse(concert["end_time"]).date()) if "end_time" in concert else None
         return {
             "titel": concert["name"] if "name" in concert else None,
@@ -261,7 +261,7 @@ class SetlistFmLeecher(PlatformLeecher):
     def map_platform_to_schema(self, concert, band, mbid, other):
         stad = concert["venue"]["city"]["name"]
         state = concert["venue"]["city"]["stateCode"] if "stateCode" in concert["venue"]["city"] else None
-        if state is not None:
+        if state is not None and concert["venue"]["city"]["country"]["code"] in ["US", "Brazil", "Australia", "Canada"]:
             stad = stad + ", " + state
         return {
             "titel": concert["info"] if "info" in concert else None,

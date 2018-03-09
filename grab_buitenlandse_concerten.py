@@ -614,7 +614,6 @@ class Reporter(object):
 
         self.drive = drive
         self.aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre = None
-        self.aantal_nieuwe_concerten = None
         self.old_status_ignore = None
         self.old_status_musicbrainz = None
         self.old_status_city_cleaning = None
@@ -634,9 +633,6 @@ class Reporter(object):
         genre_is_rest = self.current_status_musicbrainz["maingenre"].isnull()
         aantal = len(self.current_status_musicbrainz[has_concerts & genre_is_rest].index)
         self.aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre = aantal
-
-    def set_aantal_nieuwe_concerten(self):
-        self.aantal_nieuwe_concerten = len(read_excel("output/diff_" + str(self.datum_recentste_check.date()) + ".xlsx").index)
 
     def take_snapshot_of_status(self, timing):
         if timing == "old":
@@ -674,7 +670,6 @@ class Reporter(object):
     def do(self):
         self.set_aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre()
         self.compare_current_with_old_status()
-        self.set_aantal_nieuwe_concerten()
         self.generate_report()
 
     def generate_report(self):
@@ -690,7 +685,6 @@ class Reporter(object):
                 "link_country_cleaning": self.drive.get_google_drive_link("country_cleaning.xlsx")
             },
             "concerten": {
-                "aantal_nieuwe_concerten": self.aantal_nieuwe_concerten,
                 "link_concerten": self.drive.get_google_drive_link("latest.xlsx")
             },
             "genres": {

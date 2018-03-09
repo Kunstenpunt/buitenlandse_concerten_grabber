@@ -387,7 +387,8 @@ class MusicBrainzArtistsBelgium(object):
             try:
                 sleep(1.0)
                 artist = get_artist_by_id(mbid, includes=["url-rels"])["artist"]
-            except musicbrainz.NetworkError:
+            except musicbrainz.NetworkError as e:
+                print("musicbrainz netwerkerror", e)
                 sleep(25.0)
         print("adding", artist["name"])
         return self.mb_lijn(artist)

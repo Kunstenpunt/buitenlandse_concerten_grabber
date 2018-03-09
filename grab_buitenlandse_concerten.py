@@ -729,6 +729,7 @@ class Grabber(object):
         self.setlistleecher = SetlistFmLeecher()
         self.facebookleecher = FacebookEventLeecher()
         self.previous = None
+        self.previous_bare = None
         self.current = None
         self.df = None
         self.diff_event_ids = None
@@ -760,7 +761,7 @@ class Grabber(object):
         print("adding data.kunsten.be concerts")
         self.add_datakunstenbe_concerts()
 
-        self.update_previous_version()
+        self.combine_versions()
         self.clean_country_names()
         self._clean_names("stad", "stad_clean", "resources/city_cleaning.xlsx")
         self._clean_names("venue", "venue_clean", "resources/venue_cleaning.xlsx")
@@ -813,7 +814,7 @@ class Grabber(object):
         for column in columns:
             self.current[column] = self.current[column].map(lambda x: self._fix_weird_symbols(x))
 
-    def update_previous_version(self):
+    def combine_versions(self):
         print("update previous version")
         print("\tfixing weird symbols")
         self._fix_weird_symbols_in_columns(["titel", "artiest", "venue", "artiest", "stad", "land"])
@@ -823,19 +824,20 @@ class Grabber(object):
 
         print("\treading in the previous concerts")
         self.previous = read_excel("output/latest.xlsx")
+        self.previous_bare = self.previous.copy()
 
-        print("\tfixing dates and enddates, and dropping concert ids, clean cities, clean countries, visibility")
+        print("\tdropping generated columns")
         for column in ["concert_id", "stad_clean", "land_clean", "iso_code_clean", "venue_clean", "visible", "source_0", "source_link_0", "source_1", "source_link_1", "source_2", "source_link_2", "source_3", "source_link_3", "source_4", "source_link_4"]:
             try:
-                self.previous.drop(column, 1, inplace=True)
+                self.previous_bare.drop(column, 1, inplace=True)
             except ValueError:
                 continue
 
-        print("\tcombing the two datasets")
-        self.df = self.previous.append(self.current, ignore_index=True)
+        print("combing the two datasets")
+        self.df = self.previous_bare.append(self.current, ignore_index=True)
 
-        print("\tfixing the last seen on date")
-        self.df["last_seen_on"] = [lso.date() if isinstance(lso, datetime) else lso for lso in self.df["last_seen_on"]]
+        #print("\tfixing the last seen on date")
+        #self.df["last_seen_on"] = [lso.date() if isinstance(lso, datetime) else lso for lso in self.df["last_seen_on"]]
 
         print("\tapplying current updates to previous concerts")
         # make sure that an update in title, date and enddate is reflected in the first entry
@@ -906,16 +908,17 @@ class Grabber(object):
             if len(update_values) > 1:
                 self.df.at[idx, field] = update_values[-1]  # overwrite with latest value
 
-
     def _update_last_seen_on_dates_of_previous_events_that_are_still_current(self):
         prev_also_in_cur = self.previous[["event_id", "artiest_mb_id"]].isin(self.current[["event_id", "artiest_mb_id"]].to_dict(orient="list"))
         prev_indices = (prev_also_in_cur["event_id"] & prev_also_in_cur["artiest_mb_id"])
         events_artiesten = (self.previous["event_id"][prev_indices].values, self.previous["artiest_mb_id"][prev_indices].values)
+        event_ids = []
+        artiest_merge_names = []
         for i in range(0, len(events_artiesten[0])):
-            event_id = events_artiesten[0][i]
-            artiest_mb_id = events_artiesten[1][i]
-            for idx in self.df[(self.df["event_id"] == event_id) & (self.df["artiest_mb_id"] == artiest_mb_id)].index:
-                self.df.at[idx, "last_seen_on"] = self.now.date()
+            event_ids.append(events_artiesten[0][i])
+            artiest_merge_names.append(events_artiesten[1][i])
+        idxs = self.df[(self.df["event_id"].isin(event_ids)) & (self.df["artiest_mb_id"].isin(artiest_merge_names))].index
+        self.df.at[idxs, "last_seen_on"] = self.now.date()
 
     @staticmethod
     def _convert_cleaned_country_name_to_full_name(twolettercode):

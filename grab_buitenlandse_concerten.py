@@ -1047,7 +1047,7 @@ class Grabber(object):
         elif "songkick" in event_id:
             return "Songkick", "https://www.songkick.com/concerts/" + event_id.split("_")[-1]
         elif "bandsintown" in event_id:
-            return "BandsInTown", "http://bandsintown.com/event/" + event_id.split("_")[-1]
+            return "BandsInTown", "http://bandsintown.com/e/" + event_id.split("_")[-1]
         elif "setlist" in event_id:
             return "Setlist.fm", "https://www.setlist.fm/setlist/a/0/b-" + event_id.split("setlist")[-1]
         elif "podiuminfo" in event_id:

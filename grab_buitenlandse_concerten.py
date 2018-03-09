@@ -768,6 +768,7 @@ class Grabber(object):
         self.make_concerts()
         self.infer_cancellations()
         self._set_source_outlinks_per_concert()
+        self.identify_new_and_updated_concerts()
         self.send_data_to_mr_henry()
         self.persist_output()
         self.reporter.take_snapshot_of_status("current")
@@ -851,6 +852,14 @@ class Grabber(object):
         print("\tapplying last seen on date to today")
         self._update_last_seen_on_dates_of_previous_events_that_are_still_current()
 
+    def identify_new_and_updated_concerts(self):
+        with open("resources/kolomvolgorde.txt", "r") as f:
+            kolomvolgorde = [kolom.strip() for kolom in f.read().split("\n")]
+        kolomvolgorde.remove("last_seen_on")
+        kolomvolgorde.remove("concert_id")
+        merged = self.previous.merge(self.df, how="outer", indicator=True, on=kolomvolgorde)
+        new_and_updated = merged[merged["_merge"] == "right_only"]
+        self.diff_event_ids = new_and_updated["event_id"]
 
     def send_data_to_mr_henry(self, test=False):
         print(self.diff_event_ids)

@@ -934,6 +934,8 @@ class Grabber(object):
         for land in self.df["land"]:
             land = str(land).strip()
             if len(land) == 2:
+                if land == "UK":
+                    land = "GB"
                 clean_countries.append(self._convert_cleaned_country_name_to_full_name(land.upper()))
                 clean_iso_codes.append(land.upper())
             else:

@@ -853,7 +853,8 @@ class Grabber(object):
 
 
     def send_data_to_mr_henry(self, test=False):
-        df_filtered = self.df[(self.df["iso_code_clean"] != "BE")]
+        print(self.diff_event_ids)
+        df_filtered = self.df[(self.df["iso_code_clean"] != "BE") & (self.df["datum"] >= datetime(2010, 1, 1)) & (self.df["event_id"].isin(self.diff_event_ids))]
         for record in df_filtered.to_dict("records"):
             print(record)
             self._send_record_to_mr_henry_api(record, test=test)
@@ -880,7 +881,7 @@ class Grabber(object):
 
         r = post(url, data=message, params=params, headers=headers)
         if r.status_code != 200:
-            print("issue with sending this record to the api", message, r.status_code, r.headers["X-Request-ID"])
+            print("issue with sending this record to the api", message, r.status_code, r.headers)
         return r
 
     def _update_field_based_on_new_leech(self, field):
@@ -995,7 +996,7 @@ class Grabber(object):
         return inside
 
     def _concert_is_in_belgium(self, concert):
-        return True in [self.__inside_polygon(concert["longitude"], concert["latitude"], list(geojson.utils.coords(self.belgium[i]))) for i in range(0, len(self.belgium["features"]))]
+        return True in [self.__inside_polygon(float(concert["longitude"]), float(concert["latitude"]), list(geojson.utils.coords(self.belgium[i]))) for i in range(0, len(self.belgium["features"]))]
 
     def _select_visibility_per_concert(self):
         self.df["visible"] = [False] * len(self.df.index)

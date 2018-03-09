@@ -291,7 +291,7 @@ class MusicBrainzArtistsBelgium(object):
 
     def calculate_concerts_abroad(self):
         concerts = read_excel("output/latest.xlsx")
-        concerts_abroad_future = concerts[(-concerts["land_clean"].isin(["Belgium", None, "Unknown", ""])) & (concerts["datum"] > datetime.now())]
+        concerts_abroad_future = concerts[-((concerts["land_clean"] == "Belgium") | (concerts["land_clean"].isnull())) & (concerts["datum"] >= datetime(2010, 1, 1))]
         self.aantal_concerten_per_mbid = concerts_abroad_future.groupby(["artiest_mb_id"])["event_id"].count()
 
     def make_genre_mapping(self):

@@ -1,45 +1,6 @@
 import unittest
-from grab_buitenlandse_concerten import Grabber
 from pandas import DataFrame, isnull, Timestamp, Series, read_excel
 from datetime import datetime, timedelta
-from json import loads
-
-
-class TestReporter(unittest.TestCase):
-    def setUp(self):
-        self.grabber = Grabber()
-
-    def test_city_cleaning(self):
-        self.grabber.reporter.take_snapshot_of_status("old")
-        self.grabber.reporter.take_snapshot_of_status("current")
-        self.grabber.reporter.compare_city_cleaning()
-        self.assertTrue(isinstance(self.grabber.reporter.aantal_ongecleande_steden, int))
-
-    def test_country_cleaning(self):
-        self.grabber.reporter.take_snapshot_of_status("old")
-        self.grabber.reporter.take_snapshot_of_status("current")
-        self.grabber.reporter.compare_country_cleaning()
-        self.assertTrue(isinstance(self.grabber.reporter.aantal_ongecleande_landen, int))
-
-    def test_genre_toekenning(self):
-        self.grabber.reporter.take_snapshot_of_status("old")
-        self.grabber.reporter.take_snapshot_of_status("current")
-        self.grabber.reporter.set_aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre()
-        self.assertTrue(isinstance(self.grabber.reporter.aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre, int))
-
-    def test_mr_henry(self):
-        data = {"artiest_mb_id": "tom van kunstenpunt", "event_id": 123, "titel": "voor q",
-                "artiest_merge_naam": "tom ruette", "datum": datetime(2010, 1, 2), "source_0": "testsource0",
-                "source_link_0": "sourcelink0", "source_1": "testsource1", "source_link_1": "testsourcelink1"}
-        r = self.grabber._send_record_to_mr_henry_api(data, test=True)
-        self.assertEqual(r.status_code, 200)
-        self.maxDiff = None
-        self.assertEqual(loads(r.content)["artist_mb_id"], data["artiest_mb_id"])
-        self.assertTrue(r.headers["X-Unit-Test"])
-
-    def tests_do_mr_henry(self):
-        self.grabber.df = read_excel("output/latest.xlsx")
-        self.grabber.send_data_to_mr_henry(test=False)
 
 
 class TestGrabber(unittest.TestCase):
@@ -350,6 +311,7 @@ class TestGrabber(unittest.TestCase):
 
     def test_establish_source_hyperlink(self):
         self.assertEqual(self.grabber._establish_source_hyperlink("facebook9871237"), ("Facebook", "https://www.facebook.com/events/9871237"))
+
 
 if __name__ == '__main__':
     unittest.main()

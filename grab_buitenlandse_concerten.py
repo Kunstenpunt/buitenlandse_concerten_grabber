@@ -1,721 +1,17 @@
 from pandas import read_excel, DataFrame, to_datetime, isnull, Timestamp
-from os import remove
 import sys
-from re import sub
-from musicbrainzngs import set_useragent, search_artists, get_area_by_id, musicbrainz, get_artist_by_id
 from codecs import open
-from time import sleep
-from json import loads, dump, load, decoder
-from requests import get, exceptions
-from math import ceil
-from datetime import datetime, timedelta, date
-import bandsintown
-from urllib import parse as urlparse
-import facebook
-from dateparser import parse as dateparse
-import psycopg2
-from configparser import ConfigParser
+from datetime import datetime, timedelta
 from pycountry import countries
-from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
-from requests import post
-import hashlib
-import hmac
-import binascii
-from json import dumps
 import geojson
-
-
-class PlatformLeecher(object):
-    def __init__(self):
-        self.platform_identifiers = []
-        self.platform_access_granter = None
-        self.events = []
-        self.platform = None
-
-    def set_platform_identifiers(self):
-        lst = read_excel("resources/belgian_mscbrnz_artists.xlsx")
-        ignore_list = read_excel("resources/ignore_list.xlsx")
-        bands_done = set()
-        for i in lst.index:
-            row = lst.ix[i]
-            if row["mbid"] not in ignore_list["mbid"].values:
-                if not isnull(row[self.platform]) and row["band"] not in bands_done:
-                    self.platform_identifiers.append((row[["band", "mbid", self.platform]]))
-                else:
-                    bands_done.add(row["band"])
-            else:
-                print("ignoring", row["band"])
-
-    def set_events_for_identifiers(self):
-        for band, mbid, urls in self.platform_identifiers:
-            for url in urls.split(","):
-                print(self.platform, band, url)
-                self.set_events_for_identifier(band, mbid, url)
-
-    def set_events_for_identifier(self, band, mbid, url):
-        raise NotImplementedError
-
-    def map_platform_to_schema(self, event, band, mbid, other):
-        raise NotImplementedError
-
-
-class SongkickLeecher(PlatformLeecher):
-    def __init__(self):
-        super().__init__()
-        with open("resources/songkick_api_key.txt") as f:
-            self.platform_access_granter = f.read()
-        self.platform = "songkick"
-        self.past_events_url = "http://api.songkick.com/api/3.0/artists/{0}/gigography.json?apikey={1}&page={2}"
-        self.future_events_url = "http://api.songkick.com/api/3.0/artists/{0}/calendar.json?apikey={1}&page={2}"
-
-    def set_events_for_identifier(self, band, mbid, url):
-        artist_id, artist_name = url.split("/")[-1].split("-")[0], " ".join(url.split("/")[-1].split("-")[1:])
-        self.get_events(self.past_events_url, artist_id, artist_name, band, mbid)
-        self.get_events(self.future_events_url, artist_id, artist_name, band, mbid)
-
-    def get_events(self, base_url, artistid, artistname, band, mbid):
-        page = 1
-        url = base_url.format(artistid, self.platform_access_granter, page)
-        html = get(url).text
-        try:
-            json_response = loads(html) if html is not None else {}
-        except decoder.JSONDecodeError:
-            json_response = {}
-        if "resultsPage" in json_response:
-            resultspaga = json_response["resultsPage"]
-            amount_events = resultspaga["totalEntries"] if "totalEntries" in resultspaga else 0
-            amount_pages = ceil(amount_events / 50.0)
-            while page <= amount_pages:
-                if json_response["resultsPage"]["status"] == "ok":
-                    for event in json_response["resultsPage"]["results"]["event"]:
-                        self.events.append(self.map_platform_to_schema(event, band, mbid, {"artist_id": artistid, "artist_name": artistname}))
-                    page += 1
-                    url = base_url.format(artistid, self.platform_access_granter, page)
-                    html = get(url).text
-                    try:
-                        json_response = loads(html)
-                    except decoder.JSONDecodeError:
-                        print("decoder error")
-                        json_response = {}
-
-    def map_platform_to_schema(self, event, band, mbid, other):
-        concertdate = Timestamp(dateparse(event["start"]["date"]).date())
-        return {
-            "titel": event["displayName"].strip().rstrip(concertdate.strftime("%B %d, %Y")),
-            "titel_generated": event["displayName"].strip().rstrip(concertdate.strftime("%B %d, %Y")),
-            "datum": concertdate,
-            "einddatum": Timestamp(dateparse(event["end"]["date"]).date()) if "end" in event else None,
-            "artiest": other["artist_name"],
-            "artiest_id": "songkick_" + str(other["artist_id"]),
-            "artiest_mb_naam": band,
-            "artiest_mb_id": mbid,
-            "stad": ",".join([i.strip() for i in event["location"]["city"].split(",")[0:-1]]),
-            "land": event["location"]["city"].split(",")[-1].strip(),
-            "venue": event["displayName"].strip() if event["type"] == "Festival" else event["venue"]["displayName"].strip(),
-            "latitude": event["venue"]["lat"],
-            "longitude": event["venue"]["lng"],
-            "source": self.platform,
-            "event_id": "songkick_" + str(event["id"]),
-            "event_type": event["type"].lower()
-        }
-
-
-class BandsInTownLeecher(PlatformLeecher):
-    def __init__(self):
-        super().__init__()
-        self.bitc = bandsintown.Client("kunstenpunt")
-        self.platform = "bandsintown"
-
-    def set_events_for_identifier(self, band, mbid, url):
-        period = "1900-01-01,2050-01-01"
-        bandnaam = urlparse.unquote(url.split("/")[-1].split("?came_from")[0])
-        events = None
-        while events is None:
-            try:
-                events = self.bitc.events(bandnaam, date=period)
-                if events is not None:
-                    while "errors" in events:
-                        if "Rate limit exceeded" in events["errors"]:
-                            print("one moment!")
-                            sleep(60.0)
-                            events = self.bitc.events(bandnaam, date=period)
-                        else:
-                            events = []
-            except decoder.JSONDecodeError:
-                print("decoder error")
-                events = None
-
-        for concert in events:
-            self.events.append(self.map_platform_to_schema(concert, band, mbid, {}))
-
-    def map_platform_to_schema(self, concert, band, mbid, other):
-        region = concert["venue"]["region"] if "region" in concert["venue"] else None
-        stad = (concert["venue"]["city"]).strip()
-        if region is not None and (concert["venue"]["country"]).strip() in ["Ac United States", "United States", "Canada", "Brazil", "Australia"]:
-            stad = stad + ", " + region.strip()
-        return {
-            "datum": Timestamp(dateparse(concert["datetime"]).date()),
-            "land": (concert["venue"]["country"]).strip(),
-            "stad": stad,
-            "venue": (concert["venue"]["place"]).strip(),
-            "titel": (concert["title"]).strip(),
-            "titel_generated": (concert["title"]).strip(),
-            "artiest": self.__get_artist_naam(concert),
-            "artiest_mb_naam": band,
-            "artiest_id": "bandsintown_" + str(concert["artist_id"]),
-            "artiest_mb_id": mbid,
-            "event_id": "bandsintown_" + str(concert["id"]),
-            "latitude": (concert["venue"]["latitude"]),
-            "longitude": (concert["venue"]["longitude"]),
-            "source": self.platform
-        }
-
-    @staticmethod
-    def __get_artist_naam(concert):
-        for artist in concert["artists"]:
-            if artist["id"] == concert["artist_id"]:
-                return artist["name"]
-
-
-class FacebookEventLeecher(PlatformLeecher):
-    def __init__(self):
-        super().__init__()
-        with open("resources/facebook_access_token.txt") as f:
-            fb_token = f.read()
-        self.graph = facebook.GraphAPI(access_token=fb_token, version=2.10)
-        self.platform = "facebook"
-        try:
-            remove("resources/facebook_errors.txt")
-        except FileNotFoundError:
-            pass
-
-    def set_events_for_identifier(self, band, mbid, url):
-        page_label = url.split("/")[-1].split("-")[-1] if "-" in url.split("/")[-1] else url.split("/")[-1]
-        try:
-            events = self.graph.get_connections(id=page_label, connection_name="events")
-            if "data" in events:
-                for concert in events["data"]:
-                    self.events.append(self.map_platform_to_schema(concert, band, mbid, {"page_label": page_label}))
-        except facebook.GraphAPIError as e:
-            with open("resources/facebook_errors.txt", "a") as f:
-                f.write(datetime.now().date().isoformat() + "\t" + url + "\t" + str(e) + "\n")
-        except exceptions.ConnectionError:
-            self.set_events_for_identifier(band, mbid, url)
-
-    def map_platform_to_schema(self, concert, band, mbid, other):
-        venue = concert["place"]["name"] if "place" in concert else None
-        stad = concert["place"]["location"]["city"] if "place" in concert and "location" in concert["place"] and "city" in concert["place"]["location"] else None
-        state = concert["place"]["location"]["state"] if "place" in concert and "location" in concert["place"] and "state" in concert["place"]["location"] else None
-        land = concert["place"]["location"]["country"] if "place" in concert and "location" in concert["place"] and "country" in concert["place"]["location"] else None
-        if state is not None and stad is not None and land in ["United States", "Brazil", "Canada", "Australia"]:
-            stad = stad + ", " + state
-        einddatum = Timestamp(dateparse(concert["end_time"]).date()) if "end_time" in concert else None
-        return {
-            "titel": concert["name"] if "name" in concert else None,
-            "titel_generated": str(band) + " @ " + str(venue) + " in " + str(stad) + ", " + str(land),
-            "datum": Timestamp(dateparse(concert["start_time"]).date()),
-            "einddatum": einddatum,
-            "event_type": "festival" if einddatum else None,
-            "artiest": band,
-            "artiest_id": "facebook_" + other["page_label"],
-            "artiest_mb_naam": band,
-            "artiest_mb_id": mbid,
-            "stad": stad,
-            "land": land,
-            "venue": venue,
-            "latitude": concert["place"]["location"]["latitude"] if "place" in concert and "location" in concert["place"] and "latitude" in concert["place"]["location"] else None,
-            "longitude": concert["place"]["location"]["longitude"] if "place" in concert and "location" in concert["place"] and "longitude" in concert["place"]["location"] else None,
-            "source": self.platform,
-            "event_id": "facebook" + concert["id"]
-        }
-
-
-class SetlistFmLeecher(PlatformLeecher):
-    def __init__(self):
-        super().__init__()
-        with open("resources/setlist_api_key.txt", "r") as f:
-            self.platform_access_granter = f.read()
-        self.platform = "setlist"
-
-    def set_events_for_identifier(self, band, mbid, url):
-        total_hits = 1
-        p = 1
-        retrieved_hits = 0
-        while retrieved_hits < total_hits:
-            headers = {"x-api-key": self.platform_access_granter, "Accept": "application/json"}
-            r = get("https://api.setlist.fm/rest/1.0/artist/{1}/setlists?p={0}".format(p, mbid), headers=headers)
-            try:
-                response = loads(r.text)
-            except decoder.JSONDecodeError:
-                response = {}
-            if "setlist" in response:
-                for concert in response["setlist"]:
-                    self.events.append(self.map_platform_to_schema(concert, band, mbid, {}))
-                total_hits = int(response["total"])
-                retrieved_hits += int(response["itemsPerPage"])
-            else:
-                total_hits = 0
-            p += 1
-
-    def map_platform_to_schema(self, concert, band, mbid, other):
-        stad = concert["venue"]["city"]["name"]
-        state = concert["venue"]["city"]["stateCode"] if "stateCode" in concert["venue"]["city"] else None
-        if state is not None and concert["venue"]["city"]["country"]["code"] in ["US", "Brazil", "Australia", "Canada"]:
-            stad = stad + ", " + state
-        return {
-            "titel": concert["info"] if "info" in concert else None,
-            "titel_generated":  band + " @ " + concert["venue"]["name"] + " in " + concert["venue"]["city"]["name"] + ", " + concert["venue"]["city"]["country"]["code"],
-            "datum": Timestamp(dateparse(concert["eventDate"], ["%d-%m-%Y"]).date()),
-            "artiest": concert["artist"]["name"],
-            "artiest_id": "setlist_" + concert["artist"]["url"],
-            "artiest_mb_naam": band,
-            "artiest_mb_id": mbid,
-            "stad": stad,
-            "land": concert["venue"]["city"]["country"]["code"],
-            "venue": concert["venue"]["name"],
-            "latitude": concert["venue"]["city"]["coords"]["lat"] if "lat" in concert["venue"]["city"]["coords"] else None,
-            "longitude": concert["venue"]["city"]["coords"]["long"] if "long" in concert["venue"]["city"]["coords"] else None,
-            "source": self.platform,
-            "event_id": "setlist" + concert["id"]
-        }
-
-
-class MusicBrainzArtistsBelgium(object):
-    def __init__(self, update=False):
-        self.update = update
-        self.aantal_concerten_per_mbid = None
-        set_useragent("kunstenpunt", "0.1", "github.com/kunstenpunt")
-        self.lijst = None
-        self.genres = {}
-
-    def calculate_concerts_abroad(self):
-        concerts = read_excel("output/latest.xlsx")
-        concerts_abroad_future = concerts[-((concerts["land_clean"] == "Belgium") | (concerts["land_clean"].isnull())) & (concerts["datum"] >= datetime(2010, 1, 1))]
-        self.aantal_concerten_per_mbid = concerts_abroad_future.groupby(["artiest_mb_id"])["event_id"].count()
-
-    def make_genre_mapping(self):
-        for row in self.lijst.iterrows():
-            key = row[1]["mbid"]
-            value = row[1]["maingenre"]
-            self.genres[key] = value
-
-    def load_list(self):
-        self.lijst = read_excel("resources/belgian_mscbrnz_artists.xlsx")
-
-    # TODO make a list of musicbrainz ids that refer to the same platform url, e.g. toots thielemans and toots
-    # TODO thielemans quartet both refer to the same songkick url; store these musicbrainz ids in the object so that
-    # TODO the ids can be used to detect duplicate concerts
-
-    @staticmethod
-    def __get_land(artist):
-        if "area" in artist:
-            area = artist["area"]
-            recurse = True
-            while recurse:
-                recurse = False
-                areas = get_area_by_id(area["id"], includes="area-rels")["area"]["area-relation-list"]
-                for test_area in areas:
-                    if "direction" in test_area and test_area["direction"] == "backward":
-                        area = test_area["area"]
-                        recurse = True
-            return area
-        else:
-            return {}
-
-    @staticmethod
-    def __get_rel_url(artist, urltype, domain=None):
-        urls = []
-        if "url-relation-list" in artist:
-            for url in artist["url-relation-list"]:
-                if url["type"] == urltype:
-                    if domain:
-                        if domain in url["target"]:
-                            urls.append(url["target"])
-                    else:
-                        urls.append(url["target"])
-        return ",".join(urls)
-
-    @staticmethod
-    def __make_artist_name(artist_name):
-        return sub(r"[^\w\s\d]", "", sub(r"[\[\(].+?[\)\]]", "", artist_name)).strip()
-
-    @staticmethod
-    def __get_parts_of(area_id):
-        part_of_ids = []
-        areas = None
-        while areas is None:
-            try:
-                sleep(1.0)
-                areas = get_area_by_id(area_id, includes="area-rels")["area"]["area-relation-list"]
-            except musicbrainz.NetworkError:
-                sleep(25.0)
-        for area in areas:
-            if area["type"] == "part of" and "direction" not in area:
-                part_of_ids.append((area["area"]["id"], area["area"]["name"]))
-        return part_of_ids
-
-    @staticmethod
-    def __search_artists_in_area(area, limit, offset):
-        artists = {"artist-list": [], "artist-count": -1}
-        while artists["artist-count"] < 0:
-            try:
-                sleep(1.0)
-                artists_area = search_artists(area=area, limit=limit, offset=offset)
-                sleep(1.0)
-                artists_beginarea = search_artists(beginarea=area, limit=limit, offset=offset)
-                artists['artist-list'] = artists_area["artist-list"] + artists_beginarea["artist-list"]
-                artists['artist-count'] = artists_area["artist-count"] + artists_beginarea["artist-count"]
-            except musicbrainz.NetworkError:
-                sleep(25.0)
-        return artists
-
-    def __number_of_concerts(self, mbid):
-        try:
-            return self.aantal_concerten_per_mbid.loc[mbid]
-        except KeyError:
-            return 0
-
-    @staticmethod
-    def __is_on_ignore_list(mbid):
-        ignore_list = read_excel("resources/ignore_list.xlsx")
-        return mbid in ignore_list["mbid"]
-
-    def _obtain_a_specific_mb_artist(self, mbid):
-        artist = None
-        while artist is None:
-            try:
-                sleep(1.0)
-                artist = get_artist_by_id(mbid, includes=["url-rels"])["artist"]
-            except musicbrainz.NetworkError as e:
-                print("musicbrainz netwerkerror", e)
-                sleep(25.0)
-        print("adding", artist["name"])
-        return self.mb_lijn(artist)
-
-    def update_list(self):
-        area_ids = [("5b8a5ee5-0bb3-34cf-9a75-c27c44e341fc", "Belgium")]
-        new_parts = self.__get_parts_of(area_ids[0][0])
-        area_ids.extend(new_parts)
-        while len(new_parts) > 0:
-            new_new_parts = []
-            for new_part in new_parts:
-                print("nieuwe locatie", new_part[1])
-                parts = self.__get_parts_of(new_part[0])
-                new_new_parts.extend(parts)
-                area_ids.extend(parts)
-            new_parts = new_new_parts
-        belgium = []
-        for area_id in area_ids:
-            print("finding artists in", area_id)
-            offset = 0
-            limit = 100
-            total_search_results = 1
-            while offset < total_search_results:
-                search_results = self.__search_artists_in_area(area_id[1], limit, offset)
-                for hit in list(search_results["artist-list"]):
-                    if ("area" in hit and hit["area"]["id"] == area_id[0]) or ("begin-area" in hit and hit["begin-area"]["id"] == area_id[0]):
-                        lijn = self._obtain_a_specific_mb_artist(hit["id"])
-                        belgium.append(lijn)
-                offset += limit
-                total_search_results = search_results["artist-count"]
-
-        for mbid in read_excel("resources/grace_list.xlsx")["mbid"].values:
-            lijn = self._obtain_a_specific_mb_artist(mbid)
-            belgium.append(lijn)
-
-        self.lijst = DataFrame(belgium).drop_duplicates(subset="mbid")
-        self.lijst.to_excel("resources/belgian_mscbrnz_artists.xlsx")
-
-    def mb_lijn(self, hit):
-        return {
-            "band": hit["name"],
-            "mbid": hit["id"],
-            "area": hit["area"]["name"] if "area" in hit else None,
-            "begin-area": hit["begin-area"]["name"] if "begin-area" in hit else None,
-            "begin": hit["life-span"]['begin'] if "life-span" in hit and "begin" in hit["life-span"] else None,
-            "end": hit["life-span"]["end"] if "life-span" in hit and "end" in hit["life-span"] else None,
-            "ended": hit["life-span"]["ended"] if "life-span" in hit and "ended" in hit["life-span"] else None,
-            "disambiguation": hit["disambiguation"] if "disambiguation" in hit else None,
-            "facebook": str(self.__get_rel_url(hit, "social network", "facebook.com")),
-            "songkick": str(self.__get_rel_url(hit, "songkick")),
-            "bandsintown": str(self.__get_rel_url(hit, "bandsintown")),
-            "setlist": str(self.__get_rel_url(hit, "setlistfm")),
-            "number_of_concerts": self.__number_of_concerts(hit["id"]),
-            "on_ignore_list": self.__is_on_ignore_list(hit["id"]),
-            "maingenre": self.genres[hit["id"]] if hit["id"] in self.genres else None
-        }
-
-
-class DataKunstenBeConnector(object):
-    def __init__(self):
-        cfg = ConfigParser()
-        cfg.read("resources/db.cfg")
-        knst = psycopg2.connect(host=cfg['db']['host'], port=cfg['db']['port'],
-                                database=cfg['db']['db'], user=cfg['db']['user'],
-                                password=cfg['db']['pwd'])
-        knst.set_client_encoding('UTF-8')
-        self.cur = knst.cursor()
-        self.concerts = None
-
-    def get_concerts_abroad(self):
-        sql = """
-            SELECT
-              s.id, d.year, d.month, d.day,
-              p.full_name artiest_volledige_naam,
-              o.name organisatie_naam, o.city organisatie_stad, o_countries.iso_code organisatie_land,
-              l_organisations.city_nl organisatie_locatie_stad, l_organisations_countries.iso_code organisatie_locatie_land,
-              l_a_organisations.city_nl organisatie_adres_locatie_stad, l_a_organisations_countries.iso_code organisatie_adres_locatie_land,
-              v.name venue_naam, l_venues.city_nl venue_locatie_stad, l_venues_countries.iso_code venue_locatie_land
-
-            FROM production.shows s
-
-            JOIN production.show_types st
-            ON s.show_type_id = st.id
-
-            JOIN production.date_isaars d
-            ON s.date_id = d.id
-
-            JOIN production.relationships rel_show_person
-            ON s.id = rel_show_person.show_id
-            JOIN production.people p
-            ON rel_show_person.person_id = p.id
-
-            LEFT JOIN production.countries p_countries
-            ON p.country_id = p_countries.id
-
-            LEFT JOIN production.locations p_locations
-            ON p.location_id = p_locations.id
-            LEFT JOIN production.countries p_locations_countries
-            ON p_locations.country_id = p_locations_countries.id
-
-            LEFT JOIN production.locations p_c_locations
-            ON p.current_location_id = p_c_locations.id
-            LEFT JOIN production.countries p_c_locations_countries
-            ON p_c_locations.country_id = p_c_locations_countries.id
-
-            JOIN production.organisations o
-            ON s.organisation_id = o.id
-            LEFT JOIN production.countries o_countries
-            ON o.country_id = o_countries.id
-            LEFT JOIN production.locations l_organisations
-            ON o.location_id = l_organisations.id
-            LEFT JOIN production.countries l_organisations_countries
-            ON l_organisations.country_id = l_organisations_countries.id
-
-            LEFT JOIN production.locations l_a_organisations
-            ON o.address_location_id = l_a_organisations.id
-            LEFT JOIN production.countries l_a_organisations_countries
-            ON l_a_organisations.country_id = l_a_organisations_countries.id
-
-            JOIN production.relationships rel_show_genre
-            ON s.id = rel_show_genre.show_id
-            JOIN production.genres g
-            ON rel_show_genre.genre_id = g.id
-
-            LEFT JOIN production.venues v
-            ON s.venue_id = v.id
-
-            LEFT JOIN production.countries v_countries
-            ON v.country_id = v_countries.id
-            LEFT JOIN production.locations l_venues
-            ON v.location_id = l_venues.id
-            LEFT JOIN production.countries l_venues_countries
-            ON l_venues.country_id = l_venues_countries.id
-
-            WHERE st.id IN (456, 457)
-
-            ORDER BY
-              d.year DESC, d.month DESC, d.day DESC
-        """
-        self.cur.execute(sql)
-        os = self.cur.fetchall()
-        df = DataFrame(os, columns=["id", "year", "month", "day", "artiest", "organisatie_naam", "organisatie_stad1", "organisatie_land1", "organisatie_stad2", "organisatie_land2", "organisatie_stad3", "organisatie_land3", "venue_naam", "venue_stad", "venue_land"])
-        df["event_id"] = ["datakunstenbe_" + str(row[1]["id"]) for row in df.iterrows()]
-        df["datum"] = [Timestamp(datetime(int(row[1]["year"]), int(row[1]["month"]), int(row[1]["day"]) if row[1]["day"] > 0 else 1).date()) for row in df.iterrows()]
-        df["stad"] = [row[1]["venue_stad"] if row[1]["venue_stad"] is not None else row[1]["organisatie_stad3"] if row[1]["organisatie_stad3"] is not None else row[1]["organisatie_stad2"] if row[1]["organisatie_stad2"] is not None else row[1]["organisatie_stad1"] for row in df.iterrows()]
-        df["land"] = [row[1]["venue_land"] if row[1]["venue_land"] else row[1]["organisatie_land3"] if row[1]["organisatie_land3"] else row[1]["organisatie_land2"] if row[1]["organisatie_land2"] else row[1]["organisatie_land1"] for row in df.iterrows()]
-        df["venue"] = [row[1]["venue_naam"] if row[1]["venue_naam"] else row[1]["organisatie_naam"] for row in df.iterrows()]
-        df["source"] = ["datakunstenbe"] * len(df.index)
-        df["artiest_mb_naam"] = df["artiest"]
-        self.concerts = df.drop(labels=["id", "year", "month", "day", "organisatie_naam", "organisatie_stad1", "organisatie_land1", "organisatie_stad2", "organisatie_land2", "organisatie_stad3", "organisatie_land3", "venue_naam", "venue_stad", "venue_land"], axis=1)
-
-
-class DriveSyncer(object):
-    def __init__(self):
-        # connect with google drive
-        gauth = GoogleAuth()
-        gauth.LoadCredentialsFile("resources/credentials.json")
-        gauth.SaveCredentialsFile("resources/credentials.json")
-        self.drive = GoogleDrive(gauth)
-        self.resource_files = [
-            "belgian_mscbrnz_artists.xlsx",
-            "city_cleaning.xlsx",
-            "country_cleaning.xlsx",
-            "venue_cleaning.xlsx",
-            "ignore_list.xlsx",
-            "grace_list.xlsx",
-            "manual.xlsx",
-            "merge_artists.xlsx"
-        ]
-        self.resource_files_gdrive_ids = None
-
-    def set_resource_files_ids(self):
-        self.resource_files_gdrive_ids = [(resource_file, self.get_google_drive_id(resource_file)) for resource_file in self.resource_files]
-
-    def get_google_drive_id(self, filename):
-        print("\t", filename)
-        return self.drive.ListFile({'q': "'0B4I3gofjeGMHRFhZbzNzLTJCQU0' in parents and title='{0}' and trashed=false".format(filename)}).GetList()[0]["id"]
-
-    def get_google_drive_link(self, filename):
-        return self.drive.ListFile({'q': "'0B4I3gofjeGMHRFhZbzNzLTJCQU0' in parents and title='{0}' and trashed=false".format(filename)}).GetList()[0]["alternateLink"]
-
-    def upload_file_to_leeches(self, filename, fid):
-        file = self.drive.CreateFile({'title': filename, 'id': fid})
-        file.SetContentFile(filename)
-        file['parents'] = [{"kind": "drive#fileLink", "id": '0B4I3gofjeGMHRFhZbzNzLTJCQU0'}]
-        file.Upload(param={"convert": True})
-
-    def downstream(self):
-        for item in self.resource_files_gdrive_ids:
-            self.update_local_resource(item[0], item[1])
-        self.update_local_latest()
-
-    def upstream(self):
-        for item in self.resource_files_gdrive_ids:
-            self.update_remote_resource(item[0], item[1])
-        self.update_remote_latest()
-
-    def update_local_resource(self, filename, fid):
-        file = self.drive.CreateFile({"id": fid})
-        file.GetContentFile("resources/{0}".format(filename), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-    def update_local_latest(self):
-        file = self.drive.CreateFile({"id": "0B4I3gofjeGMHWUk5bmZvQm5fdFk"})
-        file.GetContentFile("output/latest.xlsx", mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-    def update_remote_resource(self, filename, fid):
-        file = self.drive.CreateFile({'title': filename, 'id': fid})
-        file.SetContentFile("resources/" + filename)
-        file['parents'] = [{"kind": "drive#fileLink", "id": '0B4I3gofjeGMHRFhZbzNzLTJCQU0'}]
-        file.Upload(param={"convert": True})
-
-    def update_remote_latest(self):
-        file = self.drive.CreateFile({'title': "latest.xlsx", 'id': "0B4I3gofjeGMHWUk5bmZvQm5fdFk"})
-        file.SetContentFile("output/latest.xlsx")
-        file['parents'] = [{"kind": "drive#fileLink", "id": '0B4I3gofjeGMHRFhZbzNzLTJCQU0'}]
-        file.Upload(param={"convert": True})
-
-
-class Reporter(object):
-    def __init__(self, now, drive):
-        with open("output/report.json", "r", "utf-8") as f:
-            self.previous_report = load(f)
-
-        self.drive = drive
-        self.aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre = None
-        self.old_status_ignore = None
-        self.old_status_musicbrainz = None
-        self.old_status_city_cleaning = None
-        self.old_status_country_cleaning = None
-        self.current_status_ignore = None
-        self.current_status_city_cleaning = None
-        self.current_status_country_cleaning = None
-        self.current_status_musicbrainz = None
-        self.aantal_ongecleande_steden = None
-        self.aantal_ongecleande_landen = None
-        self.report = None
-        self.datum_vorige_check = None
-        self.datum_recentste_check = now
-
-    def set_aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre(self):
-        has_concerts = self.current_status_musicbrainz["number_of_concerts"] > 0
-        genre_is_rest = self.current_status_musicbrainz["maingenre"].isnull()
-        aantal = len(self.current_status_musicbrainz[has_concerts & genre_is_rest].index)
-        self.aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre = aantal
-
-    def take_snapshot_of_status(self, timing):
-        if timing == "old":
-            self.old_status_ignore = read_excel("resources/ignore_list.xlsx")
-            self.old_status_musicbrainz = read_excel("resources/belgian_mscbrnz_artists.xlsx")
-            self.old_status_city_cleaning = read_excel("resources/city_cleaning.xlsx")
-            self.old_status_country_cleaning = read_excel("resources/country_cleaning.xlsx")
-        if timing == "current":
-            self.current_status_ignore = read_excel("resources/ignore_list.xlsx")
-            self.current_status_city_cleaning = read_excel("resources/city_cleaning.xlsx")
-            self.current_status_country_cleaning = read_excel("resources/country_cleaning.xlsx")
-            self.current_status_musicbrainz = read_excel("resources/belgian_mscbrnz_artists.xlsx")
-
-    def compare_current_with_old_status(self):
-        self.set_datum_vorige_check()
-        self.compare_city_cleaning()
-        self.compare_country_cleaning()
-        self.compare_musicbrainz()
-
-    def compare_city_cleaning(self):
-        empty_cleaning = self.current_status_city_cleaning["clean"].isnull()
-        self.aantal_ongecleande_steden = len(self.current_status_city_cleaning[empty_cleaning].index)
-
-    def compare_country_cleaning(self):
-        empty_cleaning = self.current_status_country_cleaning["clean"].isnull()
-        self.aantal_ongecleande_landen = len(self.current_status_country_cleaning[empty_cleaning].index)
-
-    def compare_musicbrainz(self):
-        appended = self.current_status_musicbrainz.append(self.old_status_musicbrainz)
-        appended.drop_duplicates(keep=False, inplace=True)
-        appended.to_excel("resources/belgian_mscbrnz_artists_diff.xlsx")
-        fid = self.drive.get_google_drive_id("belgian_mscbrnz_artists_diff.xlsx")
-        self.drive.upload_file_to_leeches("resources/belgian_mscbrnz_artists_diff.xlsx", fid)
-
-    def do(self):
-        self.set_aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre()
-        self.compare_current_with_old_status()
-        self.generate_report()
-
-    def generate_report(self):
-        self.report = {
-            "recentste_check": self.datum_recentste_check.isoformat(),
-            "vorige_check": self.datum_vorige_check,
-            "steden": {
-                "aantal_ongecleande_steden": self.aantal_ongecleande_steden,
-                "link_city_cleaning": self.drive.get_google_drive_link("city_cleaning.xlsx")
-            },
-            "landen": {
-                "aantal_ongecleande_landen": self.aantal_ongecleande_landen,
-                "link_country_cleaning": self.drive.get_google_drive_link("country_cleaning.xlsx")
-            },
-            "concerten": {
-                "link_concerten": self.drive.get_google_drive_link("latest.xlsx")
-            },
-            "genres": {
-                "aantal_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre": self.aantal_musicbrainz_artiesten_met_toekomstige_buitenlandse_concerten_zonder_genre,
-                "link_mb_belgen": self.drive.get_google_drive_link("belgian_mscbrnz_artists_diff.xlsx")
-            },
-            "musicbrainz": {
-                "totaal_aantal_mb_belgen": len(self.current_status_musicbrainz.index),
-                "vorig_aantal_onderzochte_mb_belgen": len(self.old_status_musicbrainz.index),
-                "aantal_nieuwe_mb_belgen": len(self.current_status_musicbrainz.index) - len(self.old_status_musicbrainz.index),
-                "link_mb_belgen_diff": self.drive.get_google_drive_link("belgian_mscbrnz_artists_diff.xlsx"),
-                "link_mb_belgen": self.drive.get_google_drive_link("belgian_mscbrnz_artists_diff.xlsx")
-            },
-            "ignore_list": {
-                "totaal_aantal_genegeerde_mb_belgen": len(self.current_status_ignore.index),
-                "vorig_aantal_genegeerd_mb_belgen": len(self.old_status_ignore.index),
-                "link_genegeerd_mb_belgen": self.drive.get_google_drive_link("ignore_list.xlsx")
-            }
-        }
-
-    def send_report(self):
-        with open("output/report.json", "w", "utf-8") as f:
-            dump(self.report, f, indent=2)
-        with open("resources/sendmail/template.mstch", "r", "utf-8") as f:
-            template = f.read()
-
-    def set_datum_vorige_check(self):
-        try:
-            self.datum_vorige_check = self.previous_report["recentste_check"]
-        except TypeError:
-            self.datum_vorige_check = "Not available"
+from drivesyncer.drivesyncer import DriveSyncer
+from reporter.reporter import Reporter
+from musicbrainz.musicbrainzartistsbelgium import MusicBrainzArtistsBelgium
+from leechers.songkickleecher import SongkickLeecher
+from leechers.bandsintownleecher import BandsInTownLeecher
+from leechers.setlistleecher import SetlistFmLeecher
+from leechers.datakunstenbe import DataKunstenBeConnector
+from havelovewilltravel.havelovewilltravel import HaveLoveWillTravel
 
 
 class Grabber(object):
@@ -727,10 +23,11 @@ class Grabber(object):
         self.songkickleecher = SongkickLeecher()
         self.bandsintownleecher = BandsInTownLeecher()
         self.setlistleecher = SetlistFmLeecher()
-        self.facebookleecher = FacebookEventLeecher()
+        #self.facebookleecher = FacebookEventLeecher()
+        self.hlwt = HaveLoveWillTravel()
         self.previous = None
         self.previous_bare = None
-        self.current = None
+        self.current = DataFrame()
         self.df = None
         self.diff_event_ids = None
         with open("resources/belgium/admin_level_2.geojson", "r", "utf-8") as f:
@@ -752,11 +49,11 @@ class Grabber(object):
             self.mbab.update_list()
 
         print("starting the leech process")
-        self.leech([self.songkickleecher, self.bandsintownleecher, self.setlistleecher, self.facebookleecher])
+        self.leech([self.songkickleecher, self.bandsintownleecher, self.setlistleecher])#, self.facebookleecher])
         print("adding manual concerts")
-        self.add_manual_concerts()
-        print("adding podiumfestivalinfo concerts")
-        self.add_podiumfestivalinfo_concerts()
+        self.add_manual_concerts() #TODO lukt dat met remarks? rhythm junks
+        #print("adding podiumfestivalinfo concerts")
+        #self.add_podiumfestivalinfo_concerts()
 
         print("adding data.kunsten.be concerts")
         self.add_datakunstenbe_concerts()
@@ -770,7 +67,8 @@ class Grabber(object):
         self.infer_cancellations()
         self._set_source_outlinks_per_concert()
         self.identify_new_and_updated_concerts()
-        self.send_data_to_mr_henry()
+        self.hlwt.set_data(self.df, self.diff_event_ids)  # zet data
+        self.hlwt.send_data_to_mr_henry()
         self.persist_output()
         self.reporter.take_snapshot_of_status("current")
         self.syncdrive.upstream()
@@ -788,23 +86,23 @@ class Grabber(object):
         manual = read_excel("resources/manual.xlsx")
         manual["datum"] = [Timestamp(datum.date()) for datum in to_datetime(manual["datum"].values)]
         manual["source"] = ["manual"] * len(manual.index)
-        self.current = self.current.append(manual, ignore_index=True)
+        self.current = self.current.append(manual, ignore_index=True, sort=True)
 
     def add_podiumfestivalinfo_concerts(self):
         pci = read_excel("resources/podiumfestivalinfo.xlsx")
         pci["datum"] = [Timestamp(datum.date()) for datum in to_datetime(pci["datum"].values)]
         pci["einddatum"] = [Timestamp(datum.date()) if not isnull(datum) else None for datum in to_datetime(pci["einddatum"].values)]
         pci["artiest_mb_id"] = [self._match_artist_name_to_mbid(artiest_mb_naam) for artiest_mb_naam in pci["artiest_mb_naam"].values]
-        self.current = self.current.append(pci, ignore_index=True)
+        self.current = self.current.append(pci, ignore_index=True, sort=True)
 
     def _match_artist_name_to_mbid(self, artiest_mb_naam):
         matches = self.mbab.lijst[self.mbab.lijst["band"] == artiest_mb_naam]["mbid"].values
         return matches[0] if len(matches) > 0 else None
 
     def add_datakunstenbe_concerts(self):
-        dkbc = DataKunstenBeConnector()
+        dkbc = DataKunstenBeConnector(root="./leechers/")
         dkbc.get_concerts_abroad()
-        self.current = self.current.append(dkbc.concerts, ignore_index=True)
+        self.current = self.current.append(dkbc.concerts, ignore_index=True, sort=True)
 
     @staticmethod
     def _fix_weird_symbols(x):
@@ -834,7 +132,7 @@ class Grabber(object):
                 continue
 
         print("combing the two datasets")
-        self.df = self.previous_bare.append(self.current, ignore_index=True)
+        self.df = self.previous_bare.append(self.current, ignore_index=True, sort=True)
 
         #print("\tfixing the last seen on date")
         #self.df["last_seen_on"] = [lso.date() if isinstance(lso, datetime) else lso for lso in self.df["last_seen_on"]]
@@ -859,41 +157,9 @@ class Grabber(object):
             kolomvolgorde = [kolom.strip() for kolom in f.read().split("\n")]
         kolomvolgorde.remove("last_seen_on")
         kolomvolgorde.remove("concert_id")
-        merged = self.previous.merge(self.df, how="outer", indicator=True, on=kolomvolgorde)
+        merged = self.previous.merge(self.df, how="outer", indicator=True, on="event_id")
         new_and_updated = merged[merged["_merge"] == "right_only"]
         self.diff_event_ids = new_and_updated["event_id"]
-
-    def send_data_to_mr_henry(self, test=False):
-        print(self.diff_event_ids)
-        df_filtered = self.df[(self.df["iso_code_clean"] != "BE") & (self.df["datum"] >= datetime(2010, 1, 1)) & (self.df["event_id"].isin(self.diff_event_ids))]
-        for record in df_filtered.to_dict("records"):
-            print(record)
-            self._send_record_to_mr_henry_api(record, test=test)
-
-    @staticmethod
-    def json_serial(obj):
-        if isinstance(obj, (datetime, date, Timestamp)):
-            return obj.strftime("%Y/%m/%d")
-        raise TypeError("Type %s not serializable" % type(obj))
-
-    def _send_record_to_mr_henry_api(self, data, test=False):
-        data = {key: data[key] for key in data if not isnull(data[key])}
-        message = bytes(dumps(data, default=self.json_serial), "utf-8")
-        with open("resources/mrhenrysecret.txt", "rb") as f:
-            secret = bytes(f.read())
-
-        signature = binascii.b2a_hex(hmac.new(secret, message, digestmod=hashlib.sha256).digest())
-
-        base_url = "https://have-love-will-travel.herokuapp.com/"
-        url = base_url + "import-json"
-
-        params = {"signature": signature, "test": test}
-        headers = {"Content-Type": "application/json"}
-
-        r = post(url, data=message, params=params, headers=headers)
-        if r.status_code != 200:
-            print("issue with sending this record to the api", message, r.status_code, r.headers)
-        return r
 
     def _update_field_based_on_new_leech(self, field):
         tmp = self.df[["event_id", field]].drop_duplicates()
@@ -1008,7 +274,7 @@ class Grabber(object):
         return inside
 
     def _concert_is_in_belgium(self, concert):
-        return True in [self.__inside_polygon(float(concert["longitude"]), float(concert["latitude"]), list(geojson.utils.coords(self.belgium[i]))) for i in range(0, len(self.belgium["features"]))]
+        return True in [self.__inside_polygon(float(concert["longitude"]), float(concert["latitude"]), list(geojson.utils.coords(self.belgium[i]))) for i in range(0, len(self.belgium["features"]))] if concert["longitude"] is not None else False
 
     def _select_visibility_per_concert(self):
         self.df["visible"] = [False] * len(self.df.index)

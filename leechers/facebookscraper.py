@@ -1,6 +1,6 @@
 from leechers.platformleecher import PlatformLeecher
 from urllib import parse as urlparse
-from json import decoder
+from json import decoder, loads, dumps
 from pandas import Timestamp, DataFrame
 from dateparser import parse as dateparse
 from datetime import datetime
@@ -53,70 +53,62 @@ class FacebookScraper(PlatformLeecher):
             with open(test_file, "r", "utf-8") as f:
                 r = f.read()
         soup = BeautifulSoup(r, 'html.parser')
-        datum = self._get_datum(soup)
-        location = self._get_location(soup)
-        titel = self._get_title(soup)
-        return {
-            "event_id": event_id,
-            "datum": datum,
-            "land": location["country"],
-            "stad": location["city"],
-            "venue": location["venue"],
-            "latitude": location["lat"],
-            "longitude": location["lng"],
-            "titel": titel
-        }
+        try:
+            ld = loads(soup.find("script", {"type": "application/ld+json"}).text)
+            datum = self._get_datum(ld)
+            location = self._get_location(ld)
+            titel = self._get_title(ld)
+            event_data = {
+                "event_id": event_id,
+                "datum": datum,
+                "land": location["country"],
+                "stad": location["city"],
+                "venue": location["venue"],
+                "latitude": location["lat"],
+                "longitude": location["lng"],
+                "titel": titel
+            }
+            print(event_data)
+        except AttributeError:
+            event_data = {}
+        return event_data
 
     @staticmethod
-    def _get_title(soup):
-        class_title = soup.find("h3", {"class": "_31y8"})
-        if class_title:
-            return class_title.get_text(" ")
-        else:
-            return soup.find("title")
+    def _get_title(ld):
+        return ld["name"]
 
     @staticmethod
-    def _get_datum(soup):
-        event_deixis_class = "_56hq _4g33 _533c"
-        deixis = soup.find_all("div", {"class": event_deixis_class})
-        for div in deixis:
-            title = div["title"]
-            date = (dateparse(" ".join(title.split(" ")[0:4])))
-            if date is not None:
-                return date
+    def _get_datum(ld):
+        return ld["startDate"]
 
-    def _get_location(self, soup):
-        event_deixis_class = ["_56hq _4g33 _533c", "cn co"]
-        event_location_id = ["u_0_a", "u_0_1", "u_0_9"]
-        deixis = soup.find_all("div", {"class": event_deixis_class, "id": event_location_id})
-        loc_info = {"city": None, "country": None, "lat": None, "lng": None, "venue": None}
-        if len(deixis) > 0:
-            div = deixis[0]
-            venue_search_string = div.get_text(" || ")
-            loc_info = self.get_lat_lon_for_venue(venue_search_string.replace(" || ", " "), " ".join(venue_search_string.split(" || ")[1:]), "")
-            loc_info["venue"] = div["title"]
+    def _get_location(self, ld):
+        loc_info = self.get_lat_lon_for_venue(ld["location"]["name"], ld["location"]["address"]["addressLocality"], ld["location"]["address"]["addressCountry"])
+        loc_info["venue"] = ld["location"]["name"]
+        loc_info["city"] = ld["location"]["address"]["addressLocality"],
+        loc_info["country"] = ld["location"]["address"]["addressCountry"],
         return loc_info
 
     def set_events_for_identifier(self, band, mbid, url):
         print(band, mbid, url)
 
-        url = "http://mobile.facebook" + "facebook".join(url.split("facebook")[1:]) + "/events?is_past=1"
+        urls = ["http://mobile.facebook" + "facebook".join(url.split("facebook")[1:]) + "/events"]
 
-        event_ids = self._get_event_ids(url)
+        for url in urls:
+            event_ids = self._get_event_ids(url)
 
-        events = []
-        for event_id in event_ids:
-            print("grabbing raw data for", event_id)
-            concert = self._get_event(event_id)
-            events.append(concert)
+            events = []
+            for event_id in event_ids:
+                print("grabbing raw data for", event_id)
+                concert = self._get_event(event_id)
+                events.append(concert)
 
-        if events:
-            for concert in events:
-                if isinstance(concert, dict):
-                    print("cleaning up data for", concert["event_id"])
-                    self.events.append(self.map_platform_to_schema(concert, band, mbid, {"url": url}))
+            if events:
+                for concert in events:
+                    if isinstance(concert, dict):
+                        print("cleaning up data for", concert["event_id"])
+                        self.events.append(self.map_platform_to_schema(concert, band, mbid, {"url": url}))
 
-        print("we now have", len(self.events), "concerts grabbed from facebook")
+            print("we now have", len(self.events), "concerts grabbed from facebook")
 
     def map_platform_to_schema(self, concert, band, mbid, other):
         return {

@@ -6,7 +6,7 @@ from codecs import open
 
 class TestEventLeecher(unittest.TestCase):
     def setUp(self):
-        self.fbleecher = FacebookScraper(root="./")
+        self.fbleecher = FacebookScraper(root="../resources/")
         self.test_file = "facebook_event_test.html"
 
     def test_facebook_leech(self):
@@ -16,17 +16,5 @@ class TestEventLeecher(unittest.TestCase):
     def test_facebook_get_event(self):
         print(self.fbleecher._get_event("", "facebook_event_test.html", test=True))
 
-    def test_facebook_get_date(self):
-        with open(self.test_file, "r", "utf-8") as f:
-            r = f.read()
-        soup = BeautifulSoup(r, 'html.parser')
-        print(self.fbleecher._get_datum(soup))
-
-    def test_facebook_get_location(self):
-        with open(self.test_file, "r", "utf-8") as f:
-            r = f.read()
-        soup = BeautifulSoup(r, 'html.parser')
-        print(self.fbleecher._get_location(soup))
-
     def test_facebook_get_event(self):
-        print(self.fbleecher._get_event("894015313944844"))
+        print(self.fbleecher._get_event("427285074749302"))

@@ -5,7 +5,7 @@ from codecs import open
 
 class Reporter(object):
     def __init__(self, now, drive):
-        with open("output/report.json", "r", "utf-8") as f:
+        with open("./reporter/output/report.json", "r", "utf-8") as f:
             self.previous_report = load(f)
 
         self.drive = drive

@@ -6,6 +6,7 @@ from json import decoder
 from pandas import Timestamp, DataFrame
 from dateparser import parse as dateparse
 from datetime import datetime
+import requests
 
 
 class BandsInTownLeecher(PlatformLeecher):
@@ -22,7 +23,10 @@ class BandsInTownLeecher(PlatformLeecher):
         while events is None and trials < 10:
             trials += 1
             try:
-                events = self.bitc.artists_events(bandnaam, date=period)
+                try:
+                    events = self.bitc.artists_events(bandnaam, date=period)
+                except requests.exceptions.ConnectionError:
+                    events = None
                 if events is not None:
                     while "errors" in events:
                         print(events["errors"])

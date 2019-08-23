@@ -27,7 +27,11 @@ class FacebookScraper(PlatformLeecher):
             r = get(url, headers=headers)
         except Exception as e:
             sleep(60.0)
-            r = get(url, headers=headers)
+            try:
+                r = get(url, headers=headers)
+            except Exception as e:
+                sleep(360)
+                r = get(url, headers=headers)
         event_ids = regex.findall(r.text)
         return event_ids
 
@@ -40,12 +44,15 @@ class FacebookScraper(PlatformLeecher):
                 r = get(url, headers=headers).text
             except Exception as e:
                 sleep(60.0)
-                r = get(url, headers=headers).text
+                try:
+                    r = get(url, headers=headers).text
+                except Exception as e:
+                    sleep(360)
+                    r = get(url, headers=headers).text
         else:
             with open(test_file, "r", "utf-8") as f:
                 r = f.read()
         soup = BeautifulSoup(r, 'html.parser')
-        print(soup)
         datum = self._get_datum(soup)
         location = self._get_location(soup)
         titel = self._get_title(soup)

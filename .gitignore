@@ -3,3 +3,5 @@ output/
 .idea/
 scripts/
 client_secrets.json
+*/__pycache__/
+venv/

@@ -10,6 +10,7 @@ from musicbrainz.musicbrainzartistsbelgium import MusicBrainzArtistsBelgium
 from leechers.songkickleecher import SongkickLeecher
 from leechers.bandsintownleecher import BandsInTownLeecher
 from leechers.setlistleecher import SetlistFmLeecher
+from leechers.facebookscraper import FacebookScraper
 from leechers.datakunstenbe import DataKunstenBeConnector
 from havelovewilltravel.havelovewilltravel import HaveLoveWillTravel
 
@@ -23,7 +24,7 @@ class Grabber(object):
         self.songkickleecher = SongkickLeecher()
         self.bandsintownleecher = BandsInTownLeecher()
         self.setlistleecher = SetlistFmLeecher()
-        #self.facebookleecher = FacebookEventLeecher()
+        self.facebookleecher = FacebookScraper()
         self.hlwt = HaveLoveWillTravel()
         self.previous = None
         self.previous_bare = None
@@ -49,14 +50,14 @@ class Grabber(object):
             self.mbab.update_list()
 
         print("starting the leech process")
-        self.leech([self.songkickleecher, self.bandsintownleecher, self.setlistleecher])#, self.facebookleecher])
+        self.leech([self.songkickleecher, self.bandsintownleecher, self.setlistleecher, self.facebookleecher])
         print("adding manual concerts")
         self.add_manual_concerts() #TODO lukt dat met remarks? rhythm junks
         #print("adding podiumfestivalinfo concerts")
         #self.add_podiumfestivalinfo_concerts()
 
-        print("adding data.kunsten.be concerts")
-        self.add_datakunstenbe_concerts()
+#        print("adding data.kunsten.be concerts")
+#        self.add_datakunstenbe_concerts()
 
         self.combine_versions()
         self.clean_country_names()
@@ -72,7 +73,7 @@ class Grabber(object):
         self.persist_output()
         self.reporter.take_snapshot_of_status("current")
         self.syncdrive.upstream()
-        self.reporter.do()
+#        self.reporter.do()
 
     def leech(self, leechers):
         for leecher in leechers:
@@ -190,7 +191,7 @@ class Grabber(object):
     def _convert_cleaned_country_name_to_full_name(twolettercode):
         try:
             return countries.get(alpha_2=twolettercode).name
-        except KeyError:
+        except (KeyError, AttributeError):
             return None
 
     def clean_country_names(self):
@@ -208,7 +209,7 @@ class Grabber(object):
             else:
                 try:
                     clean_country = countries.get(name=land).alpha_2
-                except KeyError:
+                except (KeyError, AttributeError) as e:
                     if land in country_cleaning["original"].values:
                         clean_country = country_cleaning[country_cleaning["original"] == land]["clean"].iloc[0]
                     else:

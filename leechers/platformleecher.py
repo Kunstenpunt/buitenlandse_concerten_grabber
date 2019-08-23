@@ -47,10 +47,16 @@ class PlatformLeecher(object):
         url = "https://maps.googleapis.com/maps/api/place/textsearch/json?query={0}&key={1}"
         venue_search = " ".join([venue, city, country])
         city_search = " ".join([city, country])
-        result = loads(get(url.format(venue_search, self.google_places_api_key)).text)
+        try:
+            result = loads(get(url.format(venue_search, self.google_places_api_key)).text)
+        except Exception as e:
+            result = {"status": "ZERO_RESULTS"}
         if result["status"] == "ZERO_RESULTS":
-            result = loads(get(url.format(city_search, self.google_places_api_key)).text)
-        if result["status"] != "ZERO_RESULTS":
+            try:
+                result = loads(get(url.format(city_search, self.google_places_api_key)).text)
+            except Exception as e:
+                result = {"results": []}
+        if len(result["results"]) > 0:
             if "types" in result["results"][0]:
                 if "locality" in result["results"][0]["types"] or "postal_code" in result["results"][0]["types"]:
                     city = result["results"][0]["name"]

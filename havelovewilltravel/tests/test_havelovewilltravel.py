@@ -2,6 +2,7 @@ import unittest
 from havelovewilltravel.havelovewilltravel import HaveLoveWillTravel
 from datetime import datetime
 from json import loads
+from pandas import read_excel
 
 
 class TestHaveLoveWillTravel(unittest.TestCase):
@@ -13,12 +14,13 @@ class TestHaveLoveWillTravel(unittest.TestCase):
                 "land_clean": "Belgique", "iso_code_clean": "BE", "concert_id": 123,
                 "artiest_merge_naam": "tom ruette", "datum": datetime(2010, 1, 2), "source_0": "testsource0",
                 "source_link_0": "sourcelink0", "source_1": "testsource1", "source_link_1": "testsourcelink1"}
-        data = {"stad_clean": "Berlin", "longitude": 13.40495, "artiest_merge_naam": "Front 242", "event_id": "songkick_39064771",
-                "titel": "out of line weekender", "land_clean": "Germany", "iso_code_clean": "DE", "artiest_mb_id": "Front 242",
-                "source_link_0": "songkick.com/concerts/39064771", "source_0": "Songkick", "datum": "2020/05/14", "concert_id": 197658.0}
         r = self.hlwt._send_record_to_mr_henry_api(data, test=False)
         print(r.text, r.status_code)
         self.assertEqual(r.status_code, 200)
         self.maxDiff = None
-        self.assertEqual(loads(r.content)["am"], data["artiest_merge_naam"])
         self.assertTrue(r.headers["X-Unit-Test"])
+
+    def test_send_everything(self):
+        self.hlwt.df = read_excel("/home/tom/PycharmProjects/buitenlandse_concerten_grabber/output/latest.xlsx")
+        self.hlwt.diff_event_ids = self.hlwt.df[self.hlwt.df["datum"] >= datetime(2019, 1, 1)]["event_id"].to_list()
+        self.hlwt.send_data_to_mr_henry()

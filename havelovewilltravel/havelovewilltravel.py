@@ -3,12 +3,13 @@ import hashlib
 import hmac
 import binascii
 from pandas import isnull, Timestamp, read_excel
-from requests import post
+from requests import post, exceptions
 from datetime import datetime, date
+from time import sleep
 
 
 class HaveLoveWillTravel(object):
-    def __init__(self, root):
+    def __init__(self, root="./"):
         self.df = None
         self.diff_event_ids = None
         self.root = root
@@ -36,7 +37,8 @@ class HaveLoveWillTravel(object):
         print(message)
 
         with open(self.root + "havelovewilltravel/resources/mrhenrysecret.txt", "rb") as f:
-            secret = bytes(f.read())
+            secret = bytes(f.read().strip())
+            print(secret)
 
         signature = binascii.b2a_hex(hmac.new(secret, message, digestmod=hashlib.sha256).digest())
 
@@ -46,9 +48,14 @@ class HaveLoveWillTravel(object):
         params = {"signature": signature, "test": test}
         headers = {"Content-Type": "application/json"}
 
-        r = post(url, data=message, params=params, headers=headers)
-        if r.status_code != 200:
-            print("issue with sending this record to the api", message, r.status_code, r.headers)
+        r = None
+        try:
+            r = post(url, data=message, params=params, headers=headers)
+            if r.status_code != 200:
+                print("issue with sending this record to the api", message, r.status_code, r.headers)
+        except exceptions.ConnectionError:
+            sleep(5)
+            self._send_record_to_mr_henry_api(data, test)
         return r
 
 

@@ -8,9 +8,10 @@ from datetime import datetime, date
 
 
 class HaveLoveWillTravel(object):
-    def __init__(self):
+    def __init__(self, root):
         self.df = None
         self.diff_event_ids = None
+        self.root = root
 
     def set_data(self, df, diff):
         self.df = df
@@ -34,7 +35,7 @@ class HaveLoveWillTravel(object):
 
         print(message)
 
-        with open("./havelovewilltravel/resources/mrhenrysecret.txt", "rb") as f:
+        with open(self.root + "havelovewilltravel/resources/mrhenrysecret.txt", "rb") as f:
             secret = bytes(f.read())
 
         signature = binascii.b2a_hex(hmac.new(secret, message, digestmod=hashlib.sha256).digest())

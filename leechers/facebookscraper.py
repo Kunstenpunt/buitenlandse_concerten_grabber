@@ -79,7 +79,7 @@ class FacebookScraper(PlatformLeecher):
 
     @staticmethod
     def _get_datum(ld):
-        return ld["startDate"]
+        return dateparse(ld["startDate"]).date()
 
     def _get_location(self, ld):
         loc_info = self.get_lat_lon_for_venue(ld["location"]["name"], ld["location"]["address"]["addressLocality"], ld["location"]["address"]["addressCountry"])

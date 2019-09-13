@@ -55,6 +55,7 @@ class FacebookScraper(PlatformLeecher):
         soup = BeautifulSoup(r, 'html.parser')
         try:
             ld = loads(soup.find("script", {"type": "application/ld+json"}).text)
+            print(ld)
             datum = self._get_datum(ld)
             location = self._get_location(ld)
             titel = self._get_title(ld)
@@ -82,10 +83,22 @@ class FacebookScraper(PlatformLeecher):
         return dateparse(ld["startDate"]).date()
 
     def _get_location(self, ld):
-        loc_info = self.get_lat_lon_for_venue(ld["location"]["name"], ld["location"]["address"]["addressLocality"], ld["location"]["address"]["addressCountry"])
-        loc_info["venue"] = ld["location"]["name"]
-        loc_info["city"] = ld["location"]["address"]["addressLocality"],
-        loc_info["country"] = ld["location"]["address"]["addressCountry"],
+        try:
+            location_name = ld["location"]["name"]
+        except KeyError:
+            location_name = ""
+        try:
+            location_street = ld["location"]["address"]["addressLocality"]
+        except KeyError:
+            location_street = ""
+        try:
+            location_country = ld["location"]["address"]["addressCountry"]
+        except KeyError:
+            location_country = ""
+        loc_info = self.get_lat_lon_for_venue(location_name, location_street, location_country)
+        loc_info["venue"] = location_name
+        loc_info["city"] = location_street,
+        loc_info["country"] = location_country,
         return loc_info
 
     def set_events_for_identifier(self, band, mbid, url):

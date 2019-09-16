@@ -117,7 +117,7 @@ class FacebookScraper(PlatformLeecher):
 
             if events:
                 for concert in events:
-                    if isinstance(concert, dict):
+                    if isinstance(concert, dict) and "event_id" in concert:
                         print("cleaning up data for", concert["event_id"])
                         self.events.append(self.map_platform_to_schema(concert, band, mbid, {"url": url}))
 

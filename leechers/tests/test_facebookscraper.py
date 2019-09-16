@@ -17,4 +17,4 @@ class TestEventLeecher(unittest.TestCase):
         print(self.fbleecher._get_event("", "facebook_event_test.html", test=True))
 
     def test_facebook_get_event(self):
-        print(self.fbleecher._get_event("705945269453693"))
+        print(self.fbleecher._get_event("1209336099216772"))

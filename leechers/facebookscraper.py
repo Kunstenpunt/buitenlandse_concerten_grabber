@@ -39,16 +39,11 @@ class FacebookScraper(PlatformLeecher):
         url = "http://mobile.facebook.com/events/" + event_id
         headers = {'user-agent': self.ua.random}
         if not test:
-            sleep(10.0)
+            sleep(5.0)
             try:
                 r = get(url, headers=headers).text
             except Exception as e:
-                sleep(60.0)
-                try:
-                    r = get(url, headers=headers).text
-                except Exception as e:
-                    sleep(360)
-                    r = get(url, headers=headers).text
+                self._get_event(event_id, test_file, test)
         else:
             with open(test_file, "r", "utf-8") as f:
                 r = f.read()

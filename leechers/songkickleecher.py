@@ -30,21 +30,21 @@ class SongkickLeecher(PlatformLeecher):
         except decoder.JSONDecodeError:
             json_response = {}
         if "resultsPage" in json_response:
-            resultspaga = json_response["resultsPage"]
-            amount_events = resultspaga["totalEntries"] if "totalEntries" in resultspaga else 0
+            resultspage = json_response["resultsPage"]
+            amount_events = resultspage["totalEntries"] if "totalEntries" in resultspage else 0
             amount_pages = ceil(amount_events / 50.0)
             while page <= amount_pages:
-                if json_response["resultsPage"]["status"] == "ok":
-                    for event in json_response["resultsPage"]["results"]["event"]:
+                if resultspage["status"] == "ok":
+                    for event in resultspage["results"]["event"]:
                         self.events.append(self.map_platform_to_schema(event, band, mbid, {"artist_id": artistid, "artist_name": artistname}))
                     page += 1
                     url = base_url.format(artistid, self.platform_access_granter, page)
                     html = get(url).text
                     try:
-                        json_response = loads(html)
+                        resultspage = loads(html)["resultsPage"]
                     except decoder.JSONDecodeError:
                         print("decoder error")
-                        json_response = {}
+                        resultspage = {"status": "nok"}
 
     def map_platform_to_schema(self, event, band, mbid, other):
         concertdate = Timestamp(dateparse(event["start"]["date"]).date())

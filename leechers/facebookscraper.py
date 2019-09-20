@@ -38,7 +38,7 @@ class FacebookScraper(PlatformLeecher):
     def _get_event(self, event_id, test_file=None, test=False):
         url = "http://mobile.facebook.com/events/" + event_id
         headers = {'user-agent': self.ua.random}
-        r = None
+        r = """<html></html>"""
         if not test:
             sleep(5.0)
             try:

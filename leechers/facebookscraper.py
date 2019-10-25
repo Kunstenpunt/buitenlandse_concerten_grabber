@@ -58,8 +58,8 @@ class FacebookScraper(PlatformLeecher):
             event_data = {
                 "event_id": event_id,
                 "datum": datum,
-                "land": location["country"],
-                "stad": location["city"],
+                "land": location["country"][0],
+                "stad": location["city"][0],
                 "venue": location["venue"],
                 "latitude": location["lat"],
                 "longitude": location["lng"],
